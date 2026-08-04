@@ -310,9 +310,19 @@ function renderTodoList(type){
   appContent.innerHTML=`<div class="section-title"><h2>全部事项</h2><span>${list.filter(x=>x.done).length}/${list.length} 已完成</span></div><div class="card-list sortable-list" id="mediaTodoList">${list.length?list.map(todo=>todoCardHtml(todo,'media')).join(''):emptyHtml('✓','这里还没有事项，点右上角＋新建。')}</div>`;
   bindTodoActions(type); enablePointerSort($('mediaTodoList'), ids=>{const byId=new Map((state.todos[type]||[]).map(x=>[x.id,x]));state.todos[type]=completedLast(ids.map(id=>byId.get(id)).filter(Boolean));saveState();render();});
 }
-function todoCardHtml(todo,kind){return `<div class="card ${todo.done?'done':''} sortable-item" data-sort-id="${todo.id}"><div class="card-row"><button class="drag-handle" data-drag-handle aria-label="按住拖拽排序">≡</button><input class="todo-check" type="checkbox" ${todo.done?'checked':''} data-toggle-${kind}-todo="${todo.id}"><div class="grow"><h3>${escapeHtml(todo.title)}</h3>${todo.note?`<p>${escapeHtml(todo.note)}</p>`:''}</div><button class="icon-btn danger" data-delete-${kind}-todo="${todo.id}">×</button></div></div>`;}
+function todoCardHtml(todo,kind){return `<div class="card ${todo.done?'done':''} sortable-item" data-sort-id="${todo.id}"><div class="card-row"><input class="todo-check" type="checkbox" ${todo.done?'checked':''} data-toggle-${kind}-todo="${todo.id}"><div class="grow"><h3>${escapeHtml(todo.title)}</h3>${todo.note?`<p>${escapeHtml(todo.note)}</p>`:''}</div><button class="icon-btn danger" data-delete-${kind}-todo="${todo.id}">×</button><button class="drag-handle drag-handle-right" data-drag-handle aria-label="按住拖拽排序">⋮⋮</button></div></div>`;}
 function bindTodoActions(type){
-  appContent.querySelectorAll('[data-toggle-media-todo]').forEach(el=>el.onchange=()=>{const x=state.todos[type].find(i=>i.id===el.dataset.toggleMediaTodo);if(x)x.done=el.checked;saveState();render();});
+  appContent.querySelectorAll('[data-toggle-media-todo]').forEach(el=>el.onchange=()=>{
+    const id=el.dataset.toggleMediaTodo;
+    const x=state.todos[type].find(i=>i.id===id);
+    if(!x)return;
+    if(type==='shoot' && el.checked){
+      state.todos.shoot=state.todos.shoot.filter(i=>i.id!==id);
+      state.todos.edit.push({...x,done:false,movedFromShootAt:new Date().toISOString()});
+      saveState();showToast('已拍摄，已加入剪辑清单');render();return;
+    }
+    x.done=el.checked;saveState();render();
+  });
   appContent.querySelectorAll('[data-delete-media-todo]').forEach(el=>el.onclick=()=>{state.todos[type]=state.todos[type].filter(x=>x.id!==el.dataset.deleteMediaTodo);saveState();render();});
 }
 function renderCopywriting(){
@@ -681,44 +691,56 @@ function matches(x,q){return [x.title,x.note,x.content,x.author,...(x.tags||[])]
 
 function enablePointerSort(container,onOrder){
   if(!container)return;
-  let item=null,pointerId=null,startY=0,lastY=0,moved=false,holdTimer=null;
-  const clear=()=>{clearTimeout(holdTimer);holdTimer=null;};
+  let activeItem=null, holdTimer=null, startY=0, lastY=0, moved=false, activeHandle=null;
+  const items=()=>[...container.querySelectorAll('.sortable-item')];
+  const clearHold=()=>{if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}};
+  const begin=(item,handle,y)=>{
+    activeItem=item;activeHandle=handle;startY=lastY=y;moved=false;
+    activeItem.classList.add('dragging');document.body.classList.add('is-sorting');
+    navigator.vibrate?.(18);
+  };
+  const move=(clientX,clientY)=>{
+    if(!activeItem)return;
+    lastY=clientY;if(Math.abs(lastY-startY)>3)moved=true;
+    const target=document.elementFromPoint(clientX,clientY)?.closest('.sortable-item');
+    if(target&&target!==activeItem&&target.parentElement===container){
+      const r=target.getBoundingClientRect();
+      container.insertBefore(activeItem,clientY<r.top+r.height/2?target:target.nextSibling);
+    }
+    const edge=72,step=14;
+    if(clientY<edge)window.scrollBy(0,-step);else if(clientY>window.innerHeight-edge)window.scrollBy(0,step);
+  };
   const finish=()=>{
-    clear();
-    if(!item)return;
-    item.classList.remove('dragging');
-    document.body.classList.remove('is-sorting');
-    const ids=[...container.querySelectorAll('.sortable-item')].map(x=>x.dataset.sortId);
-    const shouldSave=moved;
-    item=null;pointerId=null;moved=false;
-    if(shouldSave)onOrder(ids);
+    clearHold();
+    if(!activeItem)return;
+    activeItem.classList.remove('dragging');document.body.classList.remove('is-sorting');
+    const ids=items().map(x=>x.dataset.sortId);
+    const changed=moved;activeItem=null;activeHandle=null;moved=false;
+    if(changed)onOrder(ids);
   };
   container.querySelectorAll('[data-drag-handle]').forEach(handle=>{
-    handle.onpointerdown=e=>{
-      if(item)return;
-      const candidate=handle.closest('.sortable-item');if(!candidate)return;
-      pointerId=e.pointerId;startY=lastY=e.clientY;moved=false;
-      holdTimer=setTimeout(()=>{item=candidate;item.classList.add('dragging');document.body.classList.add('is-sorting');handle.setPointerCapture?.(pointerId);navigator.vibrate?.(18);},140);
-      e.preventDefault();
-    };
-    handle.onpointermove=e=>{
-      if(e.pointerId!==pointerId)return;
-      lastY=e.clientY;
-      if(!item){if(Math.abs(lastY-startY)>10)clear();return;}
-      if(Math.abs(lastY-startY)>3)moved=true;
-      const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('.sortable-item');
-      if(target&&target!==item&&target.parentElement===container){
-        const r=target.getBoundingClientRect();
-        container.insertBefore(item,e.clientY<r.top+r.height/2?target:target.nextSibling);
-      }
-      const edge=56;
-      if(e.clientY<edge)window.scrollBy(0,-10);else if(e.clientY>window.innerHeight-edge)window.scrollBy(0,10);
-      e.preventDefault();
-    };
-    handle.onpointerup=e=>{if(e.pointerId===pointerId)finish();};
-    handle.onpointercancel=e=>{if(e.pointerId===pointerId)finish();};
-    handle.onlostpointercapture=finish;
+    const item=handle.closest('.sortable-item');if(!item)return;
+    handle.addEventListener('touchstart',e=>{if(activeItem)return;const t=e.touches[0];startY=lastY=t.clientY;clearHold();holdTimer=setTimeout(()=>begin(item,handle,t.clientY),170);},{passive:true});
+    handle.addEventListener('mousedown',e=>{if(activeItem||e.button!==0)return;startY=lastY=e.clientY;clearHold();holdTimer=setTimeout(()=>begin(item,handle,e.clientY),120);e.preventDefault();});
   });
+  const onTouchMove=e=>{
+    const t=e.touches[0];
+    if(!activeItem){if(Math.abs((t?.clientY||0)-startY)>12)clearHold();return;}
+    e.preventDefault();move(t.clientX,t.clientY);
+  };
+  const onMouseMove=e=>{if(!activeItem)return;e.preventDefault();move(e.clientX,e.clientY);};
+  const cleanup=()=>{document.removeEventListener('touchmove',onTouchMove);document.removeEventListener('touchend',finish);document.removeEventListener('touchcancel',finish);document.removeEventListener('mousemove',onMouseMove);document.removeEventListener('mouseup',finish);};
+  document.addEventListener('touchmove',onTouchMove,{passive:false});
+  document.addEventListener('touchend',finish,{passive:true});
+  document.addEventListener('touchcancel',finish,{passive:true});
+  document.addEventListener('mousemove',onMouseMove);
+  document.addEventListener('mouseup',finish);
+}
+
+function showToast(message){
+  let toast=document.getElementById('appToast');
+  if(!toast){toast=document.createElement('div');toast.id='appToast';toast.className='app-toast';document.body.appendChild(toast);}
+  toast.textContent=message;toast.classList.add('show');clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>toast.classList.remove('show'),1800);
 }
 
 function openModal(title,html){modalTitle.textContent=title;modalBody.innerHTML=html;modal.classList.remove('hidden');}
