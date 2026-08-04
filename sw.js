@@ -1,4 +1,4 @@
-const CACHE = 'personal-workbench-v3-1-tarot-cache';
+const CACHE = 'personal-workbench-v3.2';
 const IMAGE_CACHE = 'personal-workbench-tarot-images-v1';
 const FILES = ['./','./index.html','./style.css','./app.js','./manifest.json','./icons/icon-192.png','./icons/icon-512.png'];
 

@@ -1,12 +1,12 @@
 const STORAGE_KEY = 'personal_workbench_v1';
 const BACKUP_META_KEY = 'personal_workbench_backup_meta_v1';
-const APP_VERSION = '2.6';
+const APP_VERSION = '3.2';
 
 const navigation = {
   home: { label: '首页', icon: '🏡', children: [{ id: 'overview', label: '今日概览', icon: '✨' }] },
   media: { label: '自媒体', icon: '🎀', children: [
-    { id: 'shoot', label: '待拍', icon: '📸' }, { id: 'food', label: '美食', icon: '🧁' },
-    { id: 'parcel', label: '快递', icon: '🎁' }, { id: 'copy', label: '文案', icon: '📝' }
+    { id: 'shoot', label: '待拍', icon: '📸' }, { id: 'edit', label: '剪辑', icon: '🎬' },
+    { id: 'food', label: '美食', icon: '🧁' }, { id: 'copy', label: '文案', icon: '📝' }
   ]},
   schedule: { label: '日程', icon: '🌷', children: [
     { id: 'year', label: '年日程', icon: '🗓️' }, { id: 'month', label: '月日程', icon: '🌙' },
@@ -26,7 +26,7 @@ const navigation = {
 };
 
 const defaultData = {
-  todos: { shoot: [], food: [], parcel: [] }, folders: [{ id: uid(), name: '默认文件夹', notes: [] }],
+  todos: { shoot: [], edit: [], food: [] }, folders: [{ id: uid(), name: '默认文件夹', notes: [] }],
   schedule: [], scheduleTodos: { month: [], week: [] }, exercises: [], books: [], readingDays: {}, tags: [], tarotHistory: {}
 };
 
@@ -231,6 +231,12 @@ function loadState(){
   try {
     const saved = JSON.parse(raw), merged = { ...base, ...saved };
     merged.todos = { ...base.todos, ...(saved.todos || {}) };
+    if (!Array.isArray(merged.todos.edit)) merged.todos.edit = [];
+    if (Array.isArray(saved.todos?.parcel) && saved.todos.parcel.length) {
+      const existing = new Set(merged.todos.edit.map(x => x.id));
+      merged.todos.edit.push(...saved.todos.parcel.filter(x => !existing.has(x.id)));
+    }
+    delete merged.todos.parcel;
     merged.scheduleTodos = { ...base.scheduleTodos, ...(saved.scheduleTodos || {}) };
     merged.folders = (merged.folders || []).map(f => ({ ...f, notes: (f.notes || []).map(n => ({ pinned:false, tags:[], ...n })) }));
     merged.schedule = (merged.schedule || []).map(x => ({ color:'rose', pinned:false, tags:[], ...x }));
@@ -264,15 +270,22 @@ function render(){
 
 function renderDashboard(){
   quickAddBtn.style.display='none';
-  const today=formatDate(new Date()), weekKey=getWeekKey(new Date()), monthKey=today.slice(0,7);
+  const now=new Date(), today=formatDate(now), weekKey=getWeekKey(now), monthKey=today.slice(0,7);
+  const weekStart=startOfWeek(now), weekEnd=new Date(weekStart); weekEnd.setDate(weekEnd.getDate()+6);
   const todayEvents=state.schedule.filter(x=>x.date===today).sort(sortSchedule);
-  const weekTodos=(state.scheduleTodos.week||[]).filter(x=>x.period===weekKey&&!x.done);
-  const monthTodos=(state.scheduleTodos.month||[]).filter(x=>x.period===monthKey&&!x.done);
-  const mediaCount=['shoot','food','parcel'].reduce((n,k)=>n+(state.todos[k]||[]).filter(x=>!x.done).length,0);
-  const pinnedEvents=state.schedule.filter(x=>x.pinned).sort(sortSchedule).slice(0,4);
-  const pinnedNotes=state.folders.flatMap(f=>(f.notes||[]).filter(n=>n.pinned).map(n=>({...n,folderId:f.id,folderName:f.name}))).slice(0,4);
+  const weekTodos=completedLast((state.scheduleTodos.week||[]).filter(x=>x.period===weekKey&&!x.done));
+  const monthTodos=completedLast((state.scheduleTodos.month||[]).filter(x=>x.period===monthKey&&!x.done));
+  const weekEvents=state.schedule.filter(x=>{const d=new Date(x.date+'T00:00:00');return d>=weekStart&&d<=weekEnd;}).sort(sortSchedule);
+  const pinnedMonthEvents=state.schedule.filter(x=>x.pinned&&x.date.startsWith(monthKey)).sort(sortSchedule);
+  const mediaCount=['shoot','edit','food'].reduce((n,k)=>n+(state.todos[k]||[]).filter(x=>!x.done).length,0);
   const exercise=state.exercises.filter(x=>x.date===today).reduce((n,x)=>n+Number(x.minutes||0),0);
-  const hour=new Date().getHours(), greeting=hour<12?'早上好':hour<18?'下午好':'晚上好';
+  const hour=now.getHours(), greeting=hour<12?'早上好':hour<18?'下午好':'晚上好';
+  const recentRows=[
+    ...weekTodos.slice(0,3).map(x=>({icon:'○',title:x.title,label:'本周 Todo'})),
+    ...monthTodos.slice(0,3).map(x=>({icon:'○',title:x.title,label:'本月 Todo'})),
+    ...weekEvents.slice(0,5).map(x=>({icon:'◫',title:x.title,label:`${formatShortDate(x.date)}${x.time?' '+x.time:''}`})),
+    ...pinnedMonthEvents.slice(0,4).map(x=>({icon:'★',title:x.title,label:`本月重点 · ${formatShortDate(x.date)}`}))
+  ];
   appContent.innerHTML=`
     ${tarotDashboardHtml(today,greeting)}
     <div class="dashboard-stats">
@@ -283,23 +296,20 @@ function renderDashboard(){
     </div>
     <div class="section-title"><h2>今天的安排</h2><button class="mini-link" data-go="schedule|today">查看全部</button></div>
     <div class="card-list">${todayEvents.length?todayEvents.map(scheduleCardHtml).join(''):emptyHtml('☁️','今天还没有具体日程。')}</div>
-    <div class="section-title"><h2>近期 Todo</h2><span>${weekTodos.length+monthTodos.length} 项</span></div>
-    <div class="compact-board">${[...weekTodos.slice(0,3),...monthTodos.slice(0,3)].length?[...weekTodos.slice(0,3),...monthTodos.slice(0,3)].map(x=>`<div class="compact-row"><span>○</span><strong>${escapeHtml(x.title)}</strong><small>${x.period.length===7?'本月':'本周'}</small></div>`).join(''):'<p class="soft-empty">近期 Todo 已经清空啦。</p>'}</div>
-    <div class="section-title"><h2>置顶收藏</h2><span>${pinnedEvents.length+pinnedNotes.length} 项</span></div>
-    <div class="card-list">${pinnedEvents.length+pinnedNotes.length ? pinnedEvents.map(scheduleCardHtml).join('') + pinnedNotes.map(n=>`<button class="card pinned-card" data-open-note="${n.folderId}|${n.id}"><span class="pin-mark">★ 文案</span><h3>${escapeHtml(n.title)}</h3><p>${escapeHtml(n.folderName)} · ${escapeHtml((n.content||'').slice(0,70))}</p></button>`).join('') : emptyHtml('☆','还没有置顶内容。')}</div>`;
+    <div class="section-title"><h2>近期安排</h2><span>${recentRows.length} 项</span></div>
+    <div class="compact-board">${recentRows.length?recentRows.slice(0,12).map(x=>`<div class="compact-row"><span>${x.icon}</span><strong>${escapeHtml(x.title)}</strong><small>${escapeHtml(x.label)}</small></div>`).join(''):'<p class="soft-empty">近期还没有 Todo 或日程。</p>'}</div>`;
   bindGlobalNavigation(); bindScheduleCards(); const tarotBtn=$('dailyTarotCard'); if(tarotBtn) tarotBtn.onclick=()=>enterTarotCenter('today');
-  appContent.querySelectorAll('[data-open-note]').forEach(btn=>btn.onclick=()=>{const [folderId,noteId]=btn.dataset.openNote.split('|');currentMain='media';currentSub='copy';currentFolderId=folderId;render();setTimeout(()=>openNoteEditor(folderId,noteId),0);});
 }
 function dashStat(icon,label,value,unit,main,sub){return `<button class="dash-stat" data-go="${main}|${sub}"><span>${icon}</span><small>${label}</small><strong>${value}<i>${unit}</i></strong></button>`;}
 function bindGlobalNavigation(){ appContent.querySelectorAll('[data-go]').forEach(btn=>btn.onclick=()=>{[currentMain,currentSub]=btn.dataset.go.split('|');currentFolderId=null;render();}); }
 
-function renderMedia(){ if(['shoot','food','parcel'].includes(currentSub)) renderTodoList(currentSub); else renderCopywriting(); }
+function renderMedia(){ if(['shoot','edit','food'].includes(currentSub)) renderTodoList(currentSub); else renderCopywriting(); }
 function renderTodoList(type){
-  const labels={shoot:['待拍清单','记录接下来准备拍摄的内容'],food:['美食清单','记录想吃、探店或制作的美食'],parcel:['快递清单','记录待取、待寄或等待中的快递']}, list=state.todos[type]||[];
+  const list=completedLast(state.todos[type]||[]);
   appContent.innerHTML=`<div class="section-title"><h2>全部事项</h2><span>${list.filter(x=>x.done).length}/${list.length} 已完成</span></div><div class="card-list sortable-list" id="mediaTodoList">${list.length?list.map(todo=>todoCardHtml(todo,'media')).join(''):emptyHtml('✓','这里还没有事项，点右上角＋新建。')}</div>`;
-  bindTodoActions(type); enablePointerSort($('mediaTodoList'), ids=>{state.todos[type]=ids.map(id=>state.todos[type].find(x=>x.id===id)).filter(Boolean);saveState();});
+  bindTodoActions(type); enablePointerSort($('mediaTodoList'), ids=>{const byId=new Map((state.todos[type]||[]).map(x=>[x.id,x]));state.todos[type]=completedLast(ids.map(id=>byId.get(id)).filter(Boolean));saveState();render();});
 }
-function todoCardHtml(todo,kind){return `<div class="card ${todo.done?'done':''} sortable-item" data-sort-id="${todo.id}"><div class="card-row"><button class="drag-handle" data-drag-handle aria-label="拖拽排序">⋮⋮</button><input class="todo-check" type="checkbox" ${todo.done?'checked':''} data-toggle-${kind}-todo="${todo.id}"><div class="grow"><h3>${escapeHtml(todo.title)}</h3>${todo.note?`<p>${escapeHtml(todo.note)}</p>`:''}</div><button class="icon-btn danger" data-delete-${kind}-todo="${todo.id}">×</button></div></div>`;}
+function todoCardHtml(todo,kind){return `<div class="card ${todo.done?'done':''} sortable-item" data-sort-id="${todo.id}"><div class="card-row"><button class="drag-handle" data-drag-handle aria-label="按住拖拽排序">≡</button><input class="todo-check" type="checkbox" ${todo.done?'checked':''} data-toggle-${kind}-todo="${todo.id}"><div class="grow"><h3>${escapeHtml(todo.title)}</h3>${todo.note?`<p>${escapeHtml(todo.note)}</p>`:''}</div><button class="icon-btn danger" data-delete-${kind}-todo="${todo.id}">×</button></div></div>`;}
 function bindTodoActions(type){
   appContent.querySelectorAll('[data-toggle-media-todo]').forEach(el=>el.onchange=()=>{const x=state.todos[type].find(i=>i.id===el.dataset.toggleMediaTodo);if(x)x.done=el.checked;saveState();render();});
   appContent.querySelectorAll('[data-delete-media-todo]').forEach(el=>el.onclick=()=>{state.todos[type]=state.todos[type].filter(x=>x.id!==el.dataset.deleteMediaTodo);saveState();render();});
@@ -325,7 +335,7 @@ function renderSchedule(){
 }
 function renderMonthSchedule(){
   const y=scheduleMonthDate.getFullYear(), m=scheduleMonthDate.getMonth(), monthKey=`${y}-${pad(m+1)}`;
-  const todos=(state.scheduleTodos.month||[]).filter(x=>x.period===monthKey);
+  const todos=completedLast((state.scheduleTodos.month||[]).filter(x=>x.period===monthKey));
   const monthEvents=state.schedule.filter(x=>x.date.startsWith(monthKey)).sort(sortSchedule);
   if(!selectedMonthDate.startsWith(monthKey)) selectedMonthDate=`${monthKey}-01`;
   const days=new Date(y,m+1,0).getDate(), lead=(new Date(y,m,1).getDay()+6)%7, cells=[];
@@ -349,7 +359,7 @@ function renderMonthSchedule(){
 }
 function renderWeekSchedule(){
   const start=startOfWeek(scheduleWeekDate), weekKey=formatDate(start), end=new Date(start);end.setDate(end.getDate()+6);
-  const todos=(state.scheduleTodos.week||[]).filter(x=>x.period===weekKey);
+  const todos=completedLast((state.scheduleTodos.week||[]).filter(x=>x.period===weekKey));
   const days=Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);return d;});
   appContent.innerHTML=`    ${periodTodoSection('week',todos,'本周 Todo')}
     <div class="calendar-toolbar"><button class="calendar-arrow" id="prevScheduleWeek">‹</button><h2>${formatShortDate(formatDate(start))} — ${formatShortDate(formatDate(end))}</h2><button class="calendar-arrow" id="nextScheduleWeek">›</button></div>
@@ -365,8 +375,8 @@ function renderScheduleListView(){
   appContent.innerHTML=`<div class="section-title"><h2>具体日程</h2><span>${filtered.length} 项</span></div><div class="card-list">${filtered.length?filtered.map(scheduleCardHtml).join(''):emptyHtml('◫','当前视图还没有日程。')}</div>`;
   bindScheduleCards();
 }
-function periodTodoSection(type,todos,title){return `<div class="section-title"><h2>${title}</h2><span>${todos.filter(x=>x.done).length}/${todos.length} 已完成</span></div><div class="card-list sortable-list schedule-todo-list" id="periodTodoList">${todos.length?todos.map(x=>todoCardHtml(x,'schedule')).join(''):emptyHtml('✓',`还没有${title}，点右上角＋添加。`)}</div>`;}
-function enableTodoSortForPeriod(type,key){enablePointerSort($('periodTodoList'),ids=>{const all=state.scheduleTodos[type]||[], inPeriod=ids.map(id=>all.find(x=>x.id===id)).filter(Boolean), others=all.filter(x=>x.period!==key);state.scheduleTodos[type]=[...others,...inPeriod];saveState();});}
+function periodTodoSection(type,todos,title){todos=completedLast(todos);return `<div class="section-title"><h2>${title}</h2><span>${todos.filter(x=>x.done).length}/${todos.length} 已完成</span></div><div class="card-list sortable-list schedule-todo-list" id="periodTodoList">${todos.length?todos.map(x=>todoCardHtml(x,'schedule')).join(''):emptyHtml('✓',`还没有${title}，点右上角＋添加。`)}</div>`;}
+function enableTodoSortForPeriod(type,key){enablePointerSort($('periodTodoList'),ids=>{const all=state.scheduleTodos[type]||[], inPeriod=completedLast(ids.map(id=>all.find(x=>x.id===id)).filter(Boolean)), others=all.filter(x=>x.period!==key);state.scheduleTodos[type]=[...others,...inPeriod];saveState();render();});}
 function bindScheduleTodoActions(type){
   appContent.querySelectorAll('[data-toggle-schedule-todo]').forEach(el=>el.onchange=()=>{const x=state.scheduleTodos[type].find(i=>i.id===el.dataset.toggleScheduleTodo);if(x)x.done=el.checked;saveState();render();});
   appContent.querySelectorAll('[data-delete-schedule-todo]').forEach(el=>el.onclick=()=>{state.scheduleTodos[type]=state.scheduleTodos[type].filter(x=>x.id!==el.dataset.deleteScheduleTodo);saveState();render();});
@@ -398,7 +408,7 @@ function renderReading(){
 }
 
 function handleQuickAdd(){
-  if(currentMain==='media'&&['shoot','food','parcel'].includes(currentSub))return openTodoModal(currentSub);
+  if(currentMain==='media'&&['shoot','edit','food'].includes(currentSub))return openTodoModal(currentSub);
   if(currentMain==='media'&&currentSub==='copy')return currentFolderId?openNoteEditor(currentFolderId):openFolderModal();
   if(currentMain==='schedule')return ['month','week'].includes(currentSub)?openScheduleChoiceModal():openScheduleModal();
   if(currentMain==='health'&&currentSub==='exerciseLog')return openExerciseModal();
@@ -572,7 +582,7 @@ function backupStatusText(){
 function normalizeImportedState(incoming){
   const base=structuredClone(defaultData);
   const merged={...base,...incoming};
-  merged.todos={...base.todos,...(incoming.todos||{})};
+  merged.todos={...base.todos,...(incoming.todos||{})};if(!Array.isArray(merged.todos.edit))merged.todos.edit=[];if(Array.isArray(incoming.todos?.parcel)){const ids=new Set(merged.todos.edit.map(x=>x.id));merged.todos.edit.push(...incoming.todos.parcel.filter(x=>!ids.has(x.id)));}delete merged.todos.parcel;
   merged.scheduleTodos={...base.scheduleTodos,...(incoming.scheduleTodos||{})};
   merged.folders=(merged.folders||[]).map(f=>({...f,notes:(f.notes||[]).map(n=>({pinned:false,tags:[],...n}))}));
   merged.schedule=(merged.schedule||[]).map(x=>({color:'rose',pinned:false,tags:[],...x}));
@@ -638,8 +648,45 @@ function renderSearchResults(q){
 function matches(x,q){return [x.title,x.note,x.content,x.author,...(x.tags||[])].filter(Boolean).join(' ').toLowerCase().includes(q);}
 
 function enablePointerSort(container,onOrder){
-  if(!container)return;let item=null,startY=0,moved=false;
-  container.querySelectorAll('[data-drag-handle]').forEach(handle=>{handle.onpointerdown=e=>{item=handle.closest('.sortable-item');if(!item)return;startY=e.clientY;moved=false;item.classList.add('dragging');handle.setPointerCapture?.(e.pointerId);e.preventDefault();};handle.onpointermove=e=>{if(!item)return;if(Math.abs(e.clientY-startY)>4)moved=true;const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('.sortable-item');if(target&&target!==item&&target.parentElement===container){const r=target.getBoundingClientRect();container.insertBefore(item,e.clientY<r.top+r.height/2?target:target.nextSibling);}};handle.onpointerup=e=>{if(!item)return;item.classList.remove('dragging');const ids=[...container.querySelectorAll('.sortable-item')].map(x=>x.dataset.sortId);item=null;if(moved)onOrder(ids);};handle.onpointercancel=handle.onpointerup;});
+  if(!container)return;
+  let item=null,pointerId=null,startY=0,lastY=0,moved=false,holdTimer=null;
+  const clear=()=>{clearTimeout(holdTimer);holdTimer=null;};
+  const finish=()=>{
+    clear();
+    if(!item)return;
+    item.classList.remove('dragging');
+    document.body.classList.remove('is-sorting');
+    const ids=[...container.querySelectorAll('.sortable-item')].map(x=>x.dataset.sortId);
+    const shouldSave=moved;
+    item=null;pointerId=null;moved=false;
+    if(shouldSave)onOrder(ids);
+  };
+  container.querySelectorAll('[data-drag-handle]').forEach(handle=>{
+    handle.onpointerdown=e=>{
+      if(item)return;
+      const candidate=handle.closest('.sortable-item');if(!candidate)return;
+      pointerId=e.pointerId;startY=lastY=e.clientY;moved=false;
+      holdTimer=setTimeout(()=>{item=candidate;item.classList.add('dragging');document.body.classList.add('is-sorting');handle.setPointerCapture?.(pointerId);navigator.vibrate?.(18);},140);
+      e.preventDefault();
+    };
+    handle.onpointermove=e=>{
+      if(e.pointerId!==pointerId)return;
+      lastY=e.clientY;
+      if(!item){if(Math.abs(lastY-startY)>10)clear();return;}
+      if(Math.abs(lastY-startY)>3)moved=true;
+      const target=document.elementFromPoint(e.clientX,e.clientY)?.closest('.sortable-item');
+      if(target&&target!==item&&target.parentElement===container){
+        const r=target.getBoundingClientRect();
+        container.insertBefore(item,e.clientY<r.top+r.height/2?target:target.nextSibling);
+      }
+      const edge=56;
+      if(e.clientY<edge)window.scrollBy(0,-10);else if(e.clientY>window.innerHeight-edge)window.scrollBy(0,10);
+      e.preventDefault();
+    };
+    handle.onpointerup=e=>{if(e.pointerId===pointerId)finish();};
+    handle.onpointercancel=e=>{if(e.pointerId===pointerId)finish();};
+    handle.onlostpointercapture=finish;
+  });
 }
 
 function openModal(title,html){modalTitle.textContent=title;modalBody.innerHTML=html;modal.classList.remove('hidden');}
@@ -655,6 +702,7 @@ function startOfWeek(d){const x=new Date(d);const day=(x.getDay()+6)%7;x.setDate
 function getWeekKey(d){return formatDate(startOfWeek(d));}
 function formatShortDate(v){const d=new Date(v+'T00:00:00');return `${d.getMonth()+1}月${d.getDate()}日`;}
 function formatChineseDate(d){return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日 · ${['星期日','星期一','星期二','星期三','星期四','星期五','星期六'][d.getDay()]}`;}
+function completedLast(list=[]){return [...list].sort((a,b)=>Number(a.done)-Number(b.done));}
 function sortSchedule(a,b){return (a.date+(a.time||'99:99')).localeCompare(b.date+(b.time||'99:99'));}
 function escapeHtml(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 function escapeAttr(v=''){return escapeHtml(v);}
