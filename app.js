@@ -1,4 +1,6 @@
 const STORAGE_KEY = 'personal_workbench_v1';
+const BACKUP_META_KEY = 'personal_workbench_backup_meta_v1';
+const APP_VERSION = '2.6';
 
 const navigation = {
   home: { label: '首页', icon: '🏡', children: [{ id: 'overview', label: '今日概览', icon: '✨' }] },
@@ -215,11 +217,12 @@ let selectedMonthDate = formatDate(new Date());
 
 const $ = id => document.getElementById(id);
 const appContent = $('appContent'), mainNav = $('mainNav'), subNav = $('subNav'), pageTitle = $('pageTitle');
-const quickAddBtn = $('quickAddBtn'), searchBtn = $('searchBtn'), modal = $('modal'), modalTitle = $('modalTitle'), modalBody = $('modalBody'), appShell = $('appShell');
+const quickAddBtn = $('quickAddBtn'), searchBtn = $('searchBtn'), backupBtn = $('backupBtn'), modal = $('modal'), modalTitle = $('modalTitle'), modalBody = $('modalBody'), appShell = $('appShell');
 $('closeModalBtn').onclick = closeModal;
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 quickAddBtn.onclick = handleQuickAdd;
 searchBtn.onclick = openSearchModal;
+backupBtn.onclick = openBackupModal;
 
 function uid(){ return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`; }
 function loadState(){
@@ -249,7 +252,7 @@ function renderNav(){
   subNav.classList.toggle('hidden-nav', hideSidebar); appShell.classList.toggle('no-sidebar', hideSidebar); appShell.classList.toggle('tarot-cottage', currentMain==='tarot');
 }
 function render(){
-  renderNav(); const main=navigation[currentMain], sub=main.children.find(x=>x.id===currentSub);
+  renderNav(); backupBtn.style.display=currentMain==='home'?'grid':'none'; const main=navigation[currentMain], sub=main.children.find(x=>x.id===currentSub);
   pageTitle.textContent=`${main.label} · ${sub.label}`; quickAddBtn.style.display='block';
   if(currentMain==='home') renderDashboard();
   if(currentMain==='media') renderMedia();
@@ -538,7 +541,7 @@ function renderTarotHistory(){
   const distinct=Object.keys(cardCounts).length;
   const maxGroup=Math.max(1,...Object.values(groupCounts));
   const yearOptions=(years.length?years:[currentYear]).map(y=>`<option value="${y}" ${y===year?'selected':''}>${y} 年</option>`).join('');
-  const statsHtml=`<div class="history-toolbar"><select id="tarotStatsYear" class="select">${yearOptions}</select><button id="backupTarotData" class="secondary-btn compact-btn">备份数据</button></div>
+  const statsHtml=`<div class="history-toolbar"><select id="tarotStatsYear" class="select">${yearOptions}</select></div>
     <section class="annual-stats">
       <div class="stats-hero"><div><small>YEARLY TAROT</small><strong>${entries.length}</strong><span>${year} 年记录天数</span></div><div class="orientation-ring" style="--upright:${uprightPct}%"><b>${uprightPct}%</b><span>正位</span></div></div>
       <div class="stats-mini-grid"><div><b>${upright}</b><span>正位</span></div><div><b>${reversed}</b><span>逆位</span></div><div><b>${distinct}</b><span>不同牌面</span></div><div><b>${topCards[0]?.[1]||0}</b><span>最高频次数</span></div></div>
@@ -549,34 +552,66 @@ function renderTarotHistory(){
   appContent.innerHTML=tarotTopBar('历史统计','回看这一年里，命运曾递给你的牌。')+statsHtml+historyHtml;
   bindTarotBack();
   const yearSelect=$('tarotStatsYear'); if(yearSelect)yearSelect.onchange=()=>{window.tarotStatsYear=yearSelect.value;renderTarotHistory();};
-  const backupBtn=$('backupTarotData'); if(backupBtn)backupBtn.onclick=openBackupModal;
   document.querySelectorAll('[data-stat-card]').forEach(b=>b.onclick=()=>openTarotLibraryCard(b.dataset.statCard));
   document.querySelectorAll('[data-history-date]').forEach(b=>b.onclick=()=>{const d=state.tarotHistory[b.dataset.historyDate],c=tarotDeck.find(x=>x.id===d.cardId);if(!c)return;appContent.innerHTML=tarotTopBar(`${b.dataset.historyDate} · ${c.name}`,'历史运势牌')+tarotDetailPageHtml(c,d.position);bindTarotBack();});
   document.querySelectorAll('[data-delete-history]').forEach(b=>b.onclick=e=>{e.stopPropagation();const date=b.dataset.deleteHistory;const d=state.tarotHistory?.[date],c=d&&tarotDeck.find(x=>x.id===d.cardId);if(!d)return;if(confirm(`确定删除 ${date} 的「${c?.name||'塔罗牌'}」记录吗？`)){delete state.tarotHistory[date];saveState();renderTarotHistory();}});
 }
 
 
+function getBackupMeta(){
+  try{return JSON.parse(localStorage.getItem(BACKUP_META_KEY)||'{}');}catch{return {};}
+}
+function backupStatusText(){
+  const last=getBackupMeta().lastExportedAt;
+  if(!last)return {text:'还没有保存过工作台存档',tone:'warn'};
+  const date=new Date(last),days=Math.floor((Date.now()-date.getTime())/86400000);
+  if(days<=0)return {text:'上次存档：今天',tone:'ok'};
+  if(days===1)return {text:'上次存档：昨天',tone:'ok'};
+  return {text:`上次存档：${days} 天前`,tone:days>=30?'warn':'ok'};
+}
+function normalizeImportedState(incoming){
+  const base=structuredClone(defaultData);
+  const merged={...base,...incoming};
+  merged.todos={...base.todos,...(incoming.todos||{})};
+  merged.scheduleTodos={...base.scheduleTodos,...(incoming.scheduleTodos||{})};
+  merged.folders=(merged.folders||[]).map(f=>({...f,notes:(f.notes||[]).map(n=>({pinned:false,tags:[],...n}))}));
+  merged.schedule=(merged.schedule||[]).map(x=>({color:'rose',pinned:false,tags:[],...x}));
+  merged.tarotHistory=incoming.tarotHistory||{};
+  return merged;
+}
 function openBackupModal(){
-  openModal('数据备份',`<div class="backup-panel"><p class="soft-note">导出文件会包含工作台中的待办、日程、文案、运动、阅读与塔罗历史。建议保存到 iCloud Drive。</p><button id="exportAllData" class="primary-btn">导出全部数据</button><label class="import-label">导入备份文件<input id="importAllData" type="file" accept="application/json,.json"></label><p class="soft-note">导入会覆盖当前设备中的工作台数据，请先确认文件无误。</p></div>`);
+  const status=backupStatusText();
+  openModal('工作台存档',`<div class="backup-panel workspace-backup-panel">
+    <div class="backup-status-card ${status.tone}"><span class="backup-cloud">☁</span><div><strong>${status.text}</strong><p>${status.tone==='warn'?'建议现在保存一份新的存档。':'你的工作台已有近期存档。'}</p></div></div>
+    <p class="soft-note">存档会包含自媒体待办、文案文件夹、日程、健康、阅读记录，以及全部塔罗历史与统计。</p>
+    <button id="exportAllData" class="primary-btn">⬆ 导出整个工作台</button>
+    <label class="import-label">⬇ 恢复整个工作台<input id="importAllData" type="file" accept="application/json,.json"></label>
+    <p class="soft-note backup-warning">恢复存档会覆盖当前设备里的数据。恢复前，建议先导出一份当前存档作为保险。</p>
+  </div>`);
   $('exportAllData').onclick=()=>{
-    const payload={app:'personal-workbench',version:1,exportedAt:new Date().toISOString(),data:state};
+    const now=new Date();
+    const payload={app:'personal-workbench',version:APP_VERSION,storageKey:STORAGE_KEY,exportedAt:now.toISOString(),data:state};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const url=URL.createObjectURL(blob),a=document.createElement('a');
-    a.href=url;a.download=`个人工作台备份-${formatDate(new Date())}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+    a.href=url;a.download=`Personal-Workbench-v${APP_VERSION}-${formatDate(now)}.json`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+    localStorage.setItem(BACKUP_META_KEY,JSON.stringify({lastExportedAt:now.toISOString(),version:APP_VERSION}));
+    closeModal();
+    setTimeout(()=>alert('工作台已经安全保存。建议把文件存入 iCloud Drive。'),80);
   };
   $('importAllData').onchange=async e=>{
     const file=e.target.files?.[0]; if(!file)return;
     try{
       const parsed=JSON.parse(await file.text());
       const incoming=parsed?.data||parsed;
-      if(!incoming || typeof incoming!=='object' || !incoming.todos || !incoming.tarotHistory) throw new Error('invalid');
-      if(!confirm('确定用这个备份覆盖当前工作台数据吗？'))return;
-      state={...structuredClone(defaultData),...incoming};
-      saveState();closeModal();render();alert('备份已恢复。');
-    }catch(err){alert('无法读取这个备份文件，请确认它是由个人工作台导出的 JSON 文件。');}
+      if(!incoming || typeof incoming!=='object' || !incoming.todos || !incoming.scheduleTodos || !Array.isArray(incoming.folders)) throw new Error('invalid');
+      if(!confirm('恢复后，当前工作台中的全部数据会被这个存档覆盖。确定继续吗？'))return;
+      state=normalizeImportedState(incoming);
+      saveState();
+      localStorage.setItem(BACKUP_META_KEY,JSON.stringify({lastImportedAt:new Date().toISOString(),sourceVersion:parsed?.version||'unknown'}));
+      closeModal();render();alert('工作台存档已恢复。');
+    }catch(err){alert('无法读取这个存档文件。请确认它是由个人工作台导出的 JSON 文件。');}
   };
 }
-
 
 function openTarotModal(){
   const today=formatDate(new Date()), saved=state.tarotHistory?.[today], selected=saved?.cardId||tarotDeck[0].id, position=saved?.position||'upright';
