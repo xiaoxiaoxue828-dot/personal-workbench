@@ -13,13 +13,16 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div id="appShell" class="app-shell">
     <header class="topbar">
-      <div>
+      <div class="topbar-title">
         <p class="eyebrow">MY PERSONAL DESK</p>
-        <h1 id="pageTitle">自媒体 · 待拍</h1>
+        <h1 id="pageTitle">首页 · 今日概览</h1>
       </div>
-      <button id="quickAddBtn" class="round-btn" aria-label="新建">＋</button>
+      <div class="top-actions">
+        <button id="searchBtn" class="round-btn soft" aria-label="全局搜索">⌕</button>
+        <button id="quickAddBtn" class="round-btn" aria-label="新建">＋</button>
+      </div>
     </header>
 
     <main id="appContent" class="content"></main>
