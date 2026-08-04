@@ -209,7 +209,8 @@ const eventColors = {
 };
 
 let state = loadState();
-let currentMain = 'home', currentSub = 'overview', currentFolderId = null;
+let currentMain = 'home', currentSub = 'overview', currentFolderId = null, currentNoteId = null;
+let noteSaveTimer = null;
 let readingCalendarDate = startOfMonth(new Date());
 let scheduleMonthDate = startOfMonth(new Date());
 let scheduleWeekDate = startOfWeek(new Date());
@@ -250,10 +251,10 @@ function renderNav(){
   const mains = Object.entries(navigation).filter(([,item]) => !item.hiddenFromMain);
   mainNav.style.gridTemplateColumns = `repeat(${mains.length},1fr)`;
   mainNav.innerHTML = mains.map(([id,item]) => `<button class="nav-btn ${id===currentMain?'active':''}" data-main="${id}"><span class="nav-icon">${item.icon}</span><span class="nav-label">${item.label}</span></button>`).join('');
-  mainNav.querySelectorAll('[data-main]').forEach(btn => btn.onclick = () => { currentMain=btn.dataset.main; currentSub=navigation[currentMain].children[0].id; currentFolderId=null; render(); });
+  mainNav.querySelectorAll('[data-main]').forEach(btn => btn.onclick = () => { currentMain=btn.dataset.main; currentSub=navigation[currentMain].children[0].id; currentFolderId=null; currentNoteId=null; render(); });
   const children = navigation[currentMain].children;
   subNav.innerHTML = children.map(item => `<button class="nav-btn ${item.id===currentSub?'active':''}" data-sub="${item.id}"><span class="nav-icon">${item.icon}</span><span class="nav-label">${item.label}</span></button>`).join('');
-  subNav.querySelectorAll('[data-sub]').forEach(btn => btn.onclick = () => { currentSub=btn.dataset.sub; currentFolderId=null; render(); });
+  subNav.querySelectorAll('[data-sub]').forEach(btn => btn.onclick = () => { currentSub=btn.dataset.sub; currentFolderId=null; currentNoteId=null; render(); });
   const hideSidebar = currentMain === 'home';
   subNav.classList.toggle('hidden-nav', hideSidebar); appShell.classList.toggle('no-sidebar', hideSidebar); appShell.classList.toggle('tarot-cottage', currentMain==='tarot');
 }
@@ -315,18 +316,49 @@ function bindTodoActions(type){
   appContent.querySelectorAll('[data-delete-media-todo]').forEach(el=>el.onclick=()=>{state.todos[type]=state.todos[type].filter(x=>x.id!==el.dataset.deleteMediaTodo);saveState();render();});
 }
 function renderCopywriting(){
+  if(currentFolderId && currentNoteId) return renderNoteWorkspace();
   if(currentFolderId) return renderFolderNotes();
   appContent.innerHTML=`<div class="section-title"><h2>文件夹</h2><span>${state.folders.length} 个</span></div><div class="folder-grid">${state.folders.map(f=>`<button class="folder" data-folder="${f.id}"><span class="folder-icon">📁</span><div><h3>${escapeHtml(f.name)}</h3><p>${f.notes.length} 条 · ${f.notes.filter(n=>n.pinned).length} 条置顶</p></div></button>`).join('')}</div>`;
   appContent.querySelectorAll('[data-folder]').forEach(btn=>btn.onclick=()=>{currentFolderId=btn.dataset.folder;render();});
 }
 function renderFolderNotes(){
-  const folder=state.folders.find(f=>f.id===currentFolderId); if(!folder){currentFolderId=null;return render();}
+  const folder=state.folders.find(f=>f.id===currentFolderId); if(!folder){currentFolderId=null;currentNoteId=null;return render();}
   pageTitle.textContent=`文案 · ${folder.name}`;
-  const notes=[...(folder.notes||[])].sort((a,b)=>Number(b.pinned)-Number(a.pinned));
-  appContent.innerHTML=`<button class="text-btn" id="backFoldersBtn">‹ 返回文件夹</button><div class="section-title"><h2>${escapeHtml(folder.name)}</h2><span>${notes.length} 条</span></div><div class="card-list sortable-list" id="noteList">${notes.length?notes.map(n=>`<div class="card note-card sortable-item ${n.pinned?'pinned-card':''}" data-sort-id="${n.id}"><div class="card-row"><button class="drag-handle" data-drag-handle>⋮⋮</button><button class="note-open grow" data-note="${n.id}"><div class="note-topline">${n.pinned?'<span class="pin-mark">★ 置顶</span>':''}${tagHtml(n.tags)}</div><h3>${escapeHtml(n.title)}</h3><p class="note-preview">${escapeHtml(n.content||'暂无内容')}</p></button></div></div>`).join(''):emptyHtml('✎','这个文件夹还没有备忘录。')}</div>`;
-  $('backFoldersBtn').onclick=()=>{currentFolderId=null;render();}; appContent.querySelectorAll('[data-note]').forEach(btn=>btn.onclick=()=>openNoteEditor(folder.id,btn.dataset.note));
+  const notes=[...(folder.notes||[])].sort((a,b)=>Number(b.pinned)-Number(a.pinned)||(b.updatedAt||0)-(a.updatedAt||0));
+  appContent.innerHTML=`<div class="notes-list-view"><div class="notes-list-toolbar"><button class="text-btn" id="backFoldersBtn">‹ 文件夹</button><button class="notes-new-btn" id="newNoteInlineBtn">✎ 新建备忘录</button></div><div class="notes-folder-heading"><h2>${escapeHtml(folder.name)}</h2><span>${notes.length} 条</span></div><div class="notes-search-shell"><span>⌕</span><input id="folderNoteSearch" placeholder="搜索此文件夹"></div><div class="notes-ios-list sortable-list" id="noteList">${notes.length?notes.map(n=>`<div class="notes-ios-row sortable-item ${n.pinned?'pinned-card':''}" data-sort-id="${n.id}"><button class="drag-handle note-drag" data-drag-handle aria-label="拖动排序">≡</button><button class="note-open" data-note="${n.id}"><div class="note-row-title">${n.pinned?'<span class="pin-mark">★</span>':''}<strong>${escapeHtml(n.title||'新备忘录')}</strong></div><p>${escapeHtml((n.content||'暂无内容').replace(/\n+/g,' '))}</p><small>${formatNoteUpdated(n.updatedAt)}${(n.tags||[]).length?' · '+escapeHtml(n.tags.join('、')):''}</small></button></div>`).join(''):emptyHtml('✎','这个文件夹还没有备忘录。')}</div></div>`;
+  $('backFoldersBtn').onclick=()=>{currentFolderId=null;currentNoteId=null;render();};
+  $('newNoteInlineBtn').onclick=()=>createAndOpenNote(folder.id);
+  appContent.querySelectorAll('[data-note]').forEach(btn=>btn.onclick=()=>{currentNoteId=btn.dataset.note;render();});
+  const search=$('folderNoteSearch'); search.oninput=()=>{const q=search.value.trim().toLowerCase();appContent.querySelectorAll('.notes-ios-row').forEach(row=>{const note=folder.notes.find(n=>n.id===row.dataset.sortId);row.hidden=!!q&&!`${note?.title||''} ${note?.content||''} ${(note?.tags||[]).join(' ')}`.toLowerCase().includes(q);});};
   enablePointerSort($('noteList'),ids=>{folder.notes=ids.map(id=>folder.notes.find(x=>x.id===id)).filter(Boolean);saveState();});
 }
+
+function createAndOpenNote(folderId){
+  const folder=state.folders.find(f=>f.id===folderId); if(!folder)return;
+  const note={id:uid(),title:'新备忘录',content:'',tags:[],pinned:false,updatedAt:Date.now()};
+  folder.notes.unshift(note); currentFolderId=folderId; currentNoteId=note.id; saveState(); render();
+  setTimeout(()=>{const title=$('noteWorkspaceTitle');title?.focus();title?.select();},80);
+}
+function renderNoteWorkspace(){
+  const folder=state.folders.find(f=>f.id===currentFolderId), note=folder?.notes.find(n=>n.id===currentNoteId);
+  if(!folder||!note){currentNoteId=null;return renderFolderNotes();}
+  pageTitle.textContent='文案 · 备忘录'; quickAddBtn.style.display='none';
+  appContent.innerHTML=`<div class="ios-note-workspace"><div class="ios-note-toolbar"><button class="text-btn" id="backNoteListBtn">‹ ${escapeHtml(folder.name)}</button><span id="noteSaveStatus">已保存</span><div class="ios-note-actions"><button id="copyNoteBtn" class="note-tool-btn" title="复制全文">⧉</button><button id="pinNoteBtn" class="note-tool-btn ${note.pinned?'active':''}" title="置顶">★</button><button id="noteMoreBtn" class="note-tool-btn" title="更多">•••</button></div></div><input id="noteWorkspaceTitle" class="ios-note-title" value="${escapeAttr(note.title||'')}" placeholder="标题"><div class="ios-note-meta"><input id="noteWorkspaceTags" value="${escapeAttr((note.tags||[]).join(', '))}" placeholder="添加标签，用逗号分隔"><span>${formatNoteUpdated(note.updatedAt)}</span></div><textarea id="noteWorkspaceContent" class="ios-note-body" placeholder="开始写文案…">${escapeHtml(note.content||'')}</textarea><div id="noteMorePanel" class="note-more-panel hidden"><button id="selectAllNoteBtn">全选正文</button><button id="deleteWorkspaceNoteBtn" class="danger-text">删除备忘录</button></div></div>`;
+  $('backNoteListBtn').onclick=()=>{flushNoteWorkspace(note);currentNoteId=null;render();};
+  const title=$('noteWorkspaceTitle'), content=$('noteWorkspaceContent'), tags=$('noteWorkspaceTags'), status=$('noteSaveStatus');
+  const queue=()=>{status.textContent='正在保存…';clearTimeout(noteSaveTimer);noteSaveTimer=setTimeout(()=>{flushNoteWorkspace(note);status.textContent='已保存';},450);};
+  title.oninput=queue; content.oninput=queue; tags.oninput=queue;
+  $('pinNoteBtn').onclick=()=>{note.pinned=!note.pinned;$('pinNoteBtn').classList.toggle('active',note.pinned);flushNoteWorkspace(note);};
+  $('copyNoteBtn').onclick=async()=>{const text=[title.value.trim(),content.value].filter(Boolean).join('\n\n');try{await navigator.clipboard.writeText(text);status.textContent='已复制全文';setTimeout(()=>status.textContent='已保存',1300);}catch{content.focus();content.select();document.execCommand('copy');status.textContent='已复制全文';}};
+  $('noteMoreBtn').onclick=()=>$('noteMorePanel').classList.toggle('hidden');
+  $('selectAllNoteBtn').onclick=()=>{content.focus();content.select();$('noteMorePanel').classList.add('hidden');};
+  $('deleteWorkspaceNoteBtn').onclick=()=>{if(confirm(`确定删除「${note.title||'这条备忘录'}」吗？`)){folder.notes=folder.notes.filter(n=>n.id!==note.id);saveState();currentNoteId=null;render();}};
+}
+function flushNoteWorkspace(note){
+  const title=$('noteWorkspaceTitle'),content=$('noteWorkspaceContent'),tags=$('noteWorkspaceTags'); if(!title||!content)return;
+  note.title=title.value.trim()||'新备忘录'; note.content=content.value; note.tags=parseTags(tags?.value||''); note.updatedAt=Date.now(); updateTags(note.tags); saveState();
+}
+function formatNoteUpdated(ts){if(!ts)return '刚刚';const d=new Date(ts),today=new Date();if(formatDate(d)===formatDate(today))return `今天 ${pad(d.getHours())}:${pad(d.getMinutes())}`;return `${d.getMonth()+1}月${d.getDate()}日`;}
 
 function renderSchedule(){
   if(currentSub==='month') return renderMonthSchedule();
@@ -409,7 +441,7 @@ function renderReading(){
 
 function handleQuickAdd(){
   if(currentMain==='media'&&['shoot','edit','food'].includes(currentSub))return openTodoModal(currentSub);
-  if(currentMain==='media'&&currentSub==='copy')return currentFolderId?openNoteEditor(currentFolderId):openFolderModal();
+  if(currentMain==='media'&&currentSub==='copy')return currentFolderId?createAndOpenNote(currentFolderId):openFolderModal();
   if(currentMain==='schedule')return ['month','week'].includes(currentSub)?openScheduleChoiceModal():openScheduleModal();
   if(currentMain==='health'&&currentSub==='exerciseLog')return openExerciseModal();
   if(currentMain==='reading'&&currentSub==='booklist')return openBookModal();
@@ -417,11 +449,11 @@ function handleQuickAdd(){
 function openTodoModal(type){openModal('新建事项',`<form id="todoForm"><div class="form-group"><label>事项名称</label><input class="input" name="title" required placeholder="例如：拍摄夏日穿搭视频"></div><div class="form-group"><label>备注（可选）</label><textarea class="textarea" name="note"></textarea></div><button class="primary-btn">保存</button></form>`);$('todoForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);state.todos[type].push({id:uid(),title:f.get('title').trim(),note:f.get('note').trim(),done:false});saveState();closeModal();render();};}
 function openFolderModal(){openModal('新建文件夹',`<form id="folderForm"><div class="form-group"><label>文件夹名称</label><input class="input" name="name" required placeholder="例如：小红书文案"></div><button class="primary-btn">创建文件夹</button></form>`);$('folderForm').onsubmit=e=>{e.preventDefault();state.folders.push({id:uid(),name:new FormData(e.target).get('name').trim(),notes:[]});saveState();closeModal();render();};}
 function openNoteEditor(folderId,noteId=null){
-  const folder=state.folders.find(f=>f.id===folderId), note=noteId?folder.notes.find(n=>n.id===noteId):null;
-  openModal(note?'编辑备忘录':'新建备忘录',`<form id="noteForm"><div class="form-group"><label>标题</label><input class="input" name="title" required value="${note?escapeAttr(note.title):''}"></div><div class="form-group"><label>标签（用逗号分隔）</label><input class="input" name="tags" value="${note?escapeAttr((note.tags||[]).join(', ')):''}" placeholder="例如：小红书, 美食"></div><label class="switch-row"><input type="checkbox" name="pinned" ${note?.pinned?'checked':''}><span>⭐ 置顶这篇文案</span></label><div class="form-group"><label>内容</label><textarea class="textarea" name="content">${note?escapeHtml(note.content):''}</textarea></div><button class="primary-btn">保存备忘录</button>${note?'<button type="button" id="deleteNoteBtn" class="secondary-btn">删除这条备忘录</button>':''}</form>`);
-  $('noteForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target),data={title:f.get('title').trim(),content:f.get('content'),tags:parseTags(f.get('tags')),pinned:f.get('pinned')==='on',updatedAt:Date.now()};if(note)Object.assign(note,data);else folder.notes.push({id:uid(),...data});updateTags(data.tags);saveState();closeModal();render();};
-  if(note)$('deleteNoteBtn').onclick=()=>{folder.notes=folder.notes.filter(n=>n.id!==note.id);saveState();closeModal();render();};
+  currentFolderId=folderId;
+  if(noteId){currentNoteId=noteId;render();}
+  else createAndOpenNote(folderId);
 }
+
 function openScheduleChoiceModal(){const label=currentSub==='month'?'月 Todo':'周 Todo';openModal('添加安排',`<div class="choice-grid"><button class="choice-card" id="addTodoChoice"><span>✓</span><strong>添加${label}</strong><small>还没有确定具体日期</small></button><button class="choice-card" id="addScheduleChoice"><span>◫</span><strong>添加具体日程</strong><small>已经确定日期或时间</small></button></div>`);$('addTodoChoice').onclick=()=>openScheduleTodoModal(currentSub);$('addScheduleChoice').onclick=()=>openScheduleModal(null,currentSub==='month'?selectedMonthDate:formatDate(scheduleWeekDate));}
 function openScheduleTodoModal(type){const period=type==='month'?`${scheduleMonthDate.getFullYear()}-${pad(scheduleMonthDate.getMonth()+1)}`:formatDate(startOfWeek(scheduleWeekDate)),label=type==='month'?'月 Todo':'周 Todo';openModal(`新建${label}`,`<form id="scheduleTodoForm"><div class="form-group"><label>事项名称</label><input class="input" name="title" required></div><div class="form-group"><label>备注（可选）</label><textarea class="textarea" name="note"></textarea></div><button class="primary-btn">保存${label}</button></form>`);$('scheduleTodoForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);state.scheduleTodos[type].push({id:uid(),title:f.get('title').trim(),note:f.get('note').trim(),done:false,period});saveState();closeModal();render();};}
 function openScheduleModal(id=null,defaultDate=null){
