@@ -18,7 +18,7 @@ button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 
 .app-shell { min-height: 100vh; padding-left: 84px; padding-bottom: calc(82px + var(--safe-bottom)); }
-.topbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; padding: calc(18px + env(safe-area-inset-top, 0px)) 20px 14px; background: linear-gradient(to bottom, rgba(248,243,246,.98), rgba(248,243,246,.90), rgba(248,243,246,0)); backdrop-filter: blur(12px); }
+.topbar { position: relative; z-index: 5; display: flex; align-items: center; justify-content: space-between; padding: calc(18px + env(safe-area-inset-top, 0px)) 20px 14px; background: linear-gradient(to bottom, rgba(248,243,246,.98), rgba(248,243,246,.90), rgba(248,243,246,0)); backdrop-filter: blur(12px); }
 .eyebrow { margin: 0 0 4px; font-size: 11px; letter-spacing: .18em; color: var(--muted); }
 h1 { margin: 0; font-size: 25px; line-height: 1.2; }
 .round-btn { width: 42px; height: 42px; border: 0; border-radius: 50%; background: linear-gradient(145deg, #c692aa, #aa7892); color: #fff; font-size: 27px; line-height: 1; box-shadow: var(--shadow); }
@@ -52,7 +52,7 @@ h1 { margin: 0; font-size: 25px; line-height: 1.2; }
 .empty-icon { font-size: 46px; margin-bottom: 10px; }
 
 .sub-nav, .main-nav { position: fixed; z-index: 10; background: rgba(255,255,255,.92); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,.9); box-shadow: 0 10px 30px rgba(104,72,91,.12); }
-.sub-nav { left: 8px; top: calc(92px + env(safe-area-inset-top, 0px)); bottom: calc(82px + var(--safe-bottom)); width: 68px; border-radius: 22px; padding: 7px; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; }
+.sub-nav { position: absolute; left: 8px; top: calc(92px + env(safe-area-inset-top, 0px)); bottom: auto; width: 68px; border-radius: 22px; padding: 7px; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; }
 .main-nav { left: 10px; right: 10px; bottom: calc(8px + var(--safe-bottom)); min-height: 62px; border-radius: 22px; padding: 6px; display: grid; }
 .nav-btn { border: 0; background: transparent; border-radius: 16px; color: var(--muted); padding: 8px 3px 7px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; }
 .sub-nav .nav-btn { width: 100%; min-height: 60px; flex: 0 0 auto; }
@@ -372,8 +372,8 @@ body { background-image: radial-gradient(circle at 92% 5%, rgba(228,194,211,.24)
   }
 
   .sub-nav {
-    position: sticky;
-    top: calc(78px + env(safe-area-inset-top, 0px));
+    position: relative;
+    top: auto;
     left: auto;
     right: auto;
     bottom: auto;
@@ -438,3 +438,10 @@ body { background-image: radial-gradient(circle at 92% 5%, rgba(228,194,211,.24)
   .sub-nav .nav-btn { min-width: 68px; padding-left: 9px; padding-right: 9px; }
   .sub-nav .nav-btn .nav-label { font-size: 11px; }
 }
+
+/* V3.1 — non-floating headers and faster tarot image loading */
+.tarot-art-wrap{position:relative;overflow:hidden;background:linear-gradient(110deg,#eee5ea 8%,#f8f2f5 18%,#eee5ea 33%);background-size:200% 100%;animation:tarotShimmer 1.4s linear infinite}
+.tarot-art-wrap img{opacity:0;transition:opacity .28s ease}
+.tarot-art-wrap img.is-loaded{opacity:1}
+.tarot-art-wrap:has(img.is-loaded){animation:none;background:#f3e9ee}
+@keyframes tarotShimmer{to{background-position-x:-200%}}

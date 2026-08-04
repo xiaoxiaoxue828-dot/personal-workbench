@@ -189,7 +189,7 @@ function tarotImageUrl(card){
   return `https://commons.wikimedia.org/wiki/Special:Redirect/file/${encodeURIComponent(filename)}`;
 }
 function tarotArtHtml(card, className='', reversed=false){
-  return `<div class="tarot-art-wrap ${className} ${reversed?'is-reversed':''}"><img src="${tarotImageUrl(card)}" alt="${escapeAttr(card.name)}标准韦特塔罗牌面" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="tarot-art-fallback"><span>${card.icon}</span><b>${escapeHtml(card.name)}</b></div></div>`;
+  return `<div class="tarot-art-wrap ${className} ${reversed?'is-reversed':''}"><img src="${tarotImageUrl(card)}" alt="${escapeAttr(card.name)}标准韦特塔罗牌面" loading="lazy" decoding="async" referrerpolicy="no-referrer" onload="this.classList.add('is-loaded')" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"><div class="tarot-art-fallback"><span>${card.icon}</span><b>${escapeHtml(card.name)}</b></div></div>`;
 }
 
 const tarotLearningTopics = [
