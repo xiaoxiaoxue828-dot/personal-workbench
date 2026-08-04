@@ -1,6 +1,6 @@
 const STORAGE_KEY = 'personal_workbench_v1';
 const BACKUP_META_KEY = 'personal_workbench_backup_meta_v1';
-const APP_VERSION = '3.2';
+const APP_VERSION = '3.4-period';
 
 const navigation = {
   home: { label: '首页', icon: '🏡', children: [{ id: 'overview', label: '今日概览', icon: '✨' }] },
@@ -13,7 +13,7 @@ const navigation = {
     { id: 'week', label: '周日程', icon: '📅' }, { id: 'today', label: '今日日程', icon: '☀️' }
   ]},
   health: { label: '健康', icon: '🫧', children: [
-    { id: 'exerciseLog', label: '运动记录', icon: '👟' }, { id: 'exerciseTime', label: '运动时间', icon: '⏳' }
+    { id: 'exerciseLog', label: '运动记录', icon: '👟' }, { id: 'exerciseTime', label: '运动时间', icon: '⏳' }, { id: 'period', label: '经期记录', icon: '🌙' }
   ]},
   reading: { label: '阅读', icon: '🕊️', children: [
     { id: 'booklist', label: '书单', icon: '📖' }, { id: 'readingCalendar', label: '阅读年历', icon: '🌼' }
@@ -27,7 +27,7 @@ const navigation = {
 
 const defaultData = {
   todos: { shoot: [], edit: [], food: [] }, folders: [{ id: uid(), name: '默认文件夹', notes: [] }],
-  schedule: [], scheduleTodos: { month: [], week: [] }, exercises: [], books: [], readingDays: {}, tags: [], tarotHistory: {}
+  schedule: [], scheduleTodos: { month: [], week: [] }, exercises: [], books: [], readingDays: {}, tags: [], tarotHistory: {}, periods: []
 };
 
 const majorArcana = [
@@ -241,7 +241,7 @@ function loadState(){
     merged.scheduleTodos = { ...base.scheduleTodos, ...(saved.scheduleTodos || {}) };
     merged.folders = (merged.folders || []).map(f => ({ ...f, notes: (f.notes || []).map(n => ({ pinned:false, tags:[], ...n })) }));
     merged.schedule = (merged.schedule || []).map(x => ({ color:'rose', pinned:false, tags:[], ...x }));
-    merged.tarotHistory = saved.tarotHistory || {};
+    merged.tarotHistory = saved.tarotHistory || {}; merged.periods = saved.periods || [];
     return merged;
   } catch { return base; }
 }
@@ -264,7 +264,7 @@ function render(){
   if(currentMain==='home') renderDashboard();
   if(currentMain==='media') renderMedia();
   if(currentMain==='schedule') renderSchedule();
-  if(currentMain==='health') renderHealth();
+  if(currentMain==='health') { if(currentSub==='period') renderPeriod(); else renderHealth(); }
   if(currentMain==='reading') renderReading();
   if(currentMain==='tarot') renderTarot();
 }
@@ -436,6 +436,27 @@ function renderHealth(){
     appContent.innerHTML=`<div class="stat-grid"><div class="stat-card"><span>累计运动</span><strong>${total}</strong><span>分钟</span></div><div class="stat-card"><span>本月运动</span><strong>${thisMonth}</strong><span>分钟</span></div><div class="stat-card"><span>运动天数</span><strong>${days}</strong><span>天</span></div><div class="stat-card"><span>平均每次</span><strong>${state.exercises.length?Math.round(total/state.exercises.length):0}</strong><span>分钟</span></div></div>`;quickAddBtn.style.display='none';
   }
 }
+
+function renderPeriod(){
+  const today=new Date();
+  const rec=state.periods||[];
+  appContent.innerHTML=`<div class="card period-card">
+  <h2>🌙 经期记录</h2>
+  <p>选择开始日期和结束日期，完整周期会在月历中标记。</p>
+  <div class="form-group"><label>开始日期</label><input class="input" type="date" id="periodStart"></div>
+  <div class="form-group"><label>结束日期</label><input class="input" type="date" id="periodEnd"></div>
+  <button class="primary-btn" id="savePeriod">保存本次记录</button>
+  </div>
+  <div class="card"><h3>历史记录</h3>${rec.length?rec.map(x=>`<p>🌸 ${x.start} - ${x.end} · ${x.days}天</p>`).join(''):'暂无记录'}</div>`;
+  $('savePeriod').onclick=()=>{
+    const s=$('periodStart').value,e=$('periodEnd').value;
+    if(!s||!e||e<s)return alert('请选择正确日期');
+    const days=Math.floor((new Date(e)-new Date(s))/86400000)+1;
+    state.periods.push({id:uid(),start:s,end:e,days});
+    saveState();render();
+  };
+}
+
 function renderReading(){
   if(currentSub==='booklist'){
     appContent.innerHTML=`<div class="card-list">${state.books.length?state.books.map(b=>`<div class="card"><div class="card-row"><div class="grow"><h3>${escapeHtml(b.title)}</h3><p>${escapeHtml(b.author||'作者未填写')} · ${b.status}</p><div class="progress"><div style="width:${Number(b.progress)||0}%"></div></div></div><button class="icon-btn danger" data-delete-book="${b.id}">×</button></div></div>`).join(''):emptyHtml('📚','还没有添加书籍。')}</div>`;

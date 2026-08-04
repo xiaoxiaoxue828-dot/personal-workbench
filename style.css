@@ -458,3 +458,5 @@ body.is-sorting{overflow:hidden;touch-action:none}.done{opacity:.72}.done .drag-
 .app-toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translate(-50%,14px);background:rgba(79,61,72,.92);color:#fff;padding:11px 16px;border-radius:999px;font-size:14px;z-index:500;opacity:0;pointer-events:none;transition:.2s ease;white-space:nowrap;box-shadow:0 10px 30px rgba(50,35,45,.22)}
 .app-toast.show{opacity:1;transform:translate(-50%,0)}
 @media(max-width:760px){.drag-handle-right{width:48px;height:48px;border-radius:15px}.card-row{gap:8px}}
+
+.period-card{max-width:520px;margin:auto}.period-card h2{color:var(--accent)}
