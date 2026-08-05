@@ -557,3 +557,98 @@ body.is-archiving-schedule *{
     box-shadow:inset 0 0 0 1.5px rgba(201,139,166,.28);
   }
 }
+
+
+/* V3.7 年日程按月份分组 */
+.year-schedule-header{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:12px;
+  margin:2px 0 18px;
+  padding:0 2px;
+}
+.year-schedule-header strong{
+  font-size:20px;
+  color:var(--text);
+}
+.year-schedule-header span{
+  font-size:12px;
+  color:var(--muted);
+}
+.year-schedule-list{
+  display:grid;
+  gap:24px;
+}
+.year-month-section{
+  display:grid;
+  gap:10px;
+}
+.year-month-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:0 2px 8px;
+  border-bottom:1px solid var(--line);
+}
+.year-month-heading h2{
+  margin:0;
+  font-size:24px;
+  line-height:1;
+  font-weight:800;
+  color:var(--accent);
+  letter-spacing:.02em;
+}
+.year-month-heading span{
+  color:var(--muted);
+  font-size:12px;
+}
+.year-month-events .empty{
+  min-height:auto;
+  padding:18px 14px;
+}
+
+/* V3.7 周日程改为竖向排列 */
+.week-board{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:10px;
+  overflow:visible;
+  padding-bottom:0;
+  scroll-snap-type:none;
+}
+.week-column{
+  min-height:0;
+  padding:10px 12px;
+  scroll-snap-align:none;
+}
+.week-heading{
+  padding:2px 0 10px;
+  font-size:15px;
+}
+.week-heading strong{
+  font-size:16px;
+}
+.week-heading span{
+  font-size:12px;
+}
+.week-event{
+  margin-bottom:8px;
+  padding:10px 12px;
+}
+.week-empty{
+  margin:0;
+  padding:10px 2px 4px;
+}
+
+@media (max-width:720px){
+  .year-schedule-header{
+    align-items:flex-start;
+    flex-direction:column;
+    gap:4px;
+  }
+  .year-month-heading h2{
+    font-size:22px;
+  }
+}

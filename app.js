@@ -2,7 +2,7 @@ const STORAGE_KEY = 'personal_workbench_v1';
 const BACKUP_META_KEY = 'personal_workbench_backup_meta_v1';
 const UPDATE_SNOOZE_KEY = 'personal_workbench_update_snooze_v1';
 const VERSION_URL = './version.json';
-const APP_VERSION = '3.6';
+const APP_VERSION = '3.7';
 
 const navigation = {
   home: { label: '首页', icon: '🏡', children: [{ id: 'overview', label: '今日概览', icon: '✨' }] },
@@ -420,7 +420,50 @@ function renderWeekSchedule(){
   bindScheduleTodoActions('week'); enableTodoSortForPeriod('week',weekKey);
 }
 function renderScheduleListView(){
-  const now=new Date(), filtered=state.schedule.filter(x=>currentSub==='today'?x.date===formatDate(now):new Date(x.date+'T00:00:00').getFullYear()===now.getFullYear()).sort(sortSchedule);
+  const now=new Date();
+
+  if(currentSub==='year'){
+    const year=now.getFullYear();
+    const startMonth=now.getMonth();
+    const yearEvents=state.schedule
+      .filter(x=>{
+        const d=new Date(x.date+'T00:00:00');
+        return d.getFullYear()===year && d.getMonth()>=startMonth;
+      })
+      .sort(sortSchedule);
+
+    const sections=[];
+    for(let month=startMonth;month<12;month++){
+      const monthKey=`${year}-${pad(month+1)}`;
+      const events=yearEvents.filter(x=>x.date.startsWith(monthKey));
+      sections.push(`
+        <section class="year-month-section">
+          <div class="year-month-heading">
+            <h2>${month+1}月</h2>
+            <span>${events.length} 项日程</span>
+          </div>
+          <div class="card-list year-month-events">
+            ${events.length?events.map(scheduleCardHtml).join(''):emptyHtml('◫',`${month+1}月还没有日程。`)}
+          </div>
+        </section>
+      `);
+    }
+
+    appContent.innerHTML=`
+      <div class="year-schedule-header">
+        <strong>${year} 年日程</strong>
+        <span>仅显示本月及之后的月份</span>
+      </div>
+      <div class="year-schedule-list">${sections.join('')}</div>
+    `;
+    bindScheduleCards();
+    return;
+  }
+
+  const filtered=state.schedule
+    .filter(x=>x.date===formatDate(now))
+    .sort(sortSchedule);
+
   appContent.innerHTML=`<div class="section-title"><h2>具体日程</h2><span>${filtered.length} 项</span></div><div class="card-list">${filtered.length?filtered.map(scheduleCardHtml).join(''):emptyHtml('◫','当前视图还没有日程。')}</div>`;
   bindScheduleCards();
 }
