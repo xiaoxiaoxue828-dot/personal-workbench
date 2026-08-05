@@ -1,6 +1,8 @@
 const STORAGE_KEY = 'personal_workbench_v1';
 const BACKUP_META_KEY = 'personal_workbench_backup_meta_v1';
-const APP_VERSION = '3.4-period';
+const UPDATE_SNOOZE_KEY = 'personal_workbench_update_snooze_v1';
+const VERSION_URL = './version.json';
+const APP_VERSION = '3.6';
 
 const navigation = {
   home: { label: '首页', icon: '🏡', children: [{ id: 'overview', label: '今日概览', icon: '✨' }] },
@@ -13,7 +15,8 @@ const navigation = {
     { id: 'week', label: '周日程', icon: '📅' }, { id: 'today', label: '今日日程', icon: '☀️' }
   ]},
   health: { label: '健康', icon: '🫧', children: [
-    { id: 'exerciseLog', label: '运动记录', icon: '👟' }, { id: 'exerciseTime', label: '运动时间', icon: '⏳' }, { id: 'period', label: '经期记录', icon: '🌙' }
+    { id: 'exerciseLog', label: '运动记录', icon: '👟' }, { id: 'exerciseTime', label: '运动时间', icon: '⏳' },
+    { id: 'period', label: '经期记录', icon: '🌙' }
   ]},
   reading: { label: '阅读', icon: '🕊️', children: [
     { id: 'booklist', label: '书单', icon: '📖' }, { id: 'readingCalendar', label: '阅读年历', icon: '🌼' }
@@ -27,7 +30,7 @@ const navigation = {
 
 const defaultData = {
   todos: { shoot: [], edit: [], food: [] }, folders: [{ id: uid(), name: '默认文件夹', notes: [] }],
-  schedule: [], scheduleTodos: { month: [], week: [] }, exercises: [], books: [], readingDays: {}, tags: [], tarotHistory: {}, periods: []
+  schedule: [], scheduleTodos: { month: [], week: [] }, exercises: [], periodRecords: [], books: [], readingDays: {}, tags: [], tarotHistory: {}
 };
 
 const majorArcana = [
@@ -215,6 +218,9 @@ let readingCalendarDate = startOfMonth(new Date());
 let scheduleMonthDate = startOfMonth(new Date());
 let scheduleWeekDate = startOfWeek(new Date());
 let selectedMonthDate = formatDate(new Date());
+let periodCalendarDate = startOfMonth(new Date());
+let periodDraftStart = '';
+let periodDraftEnd = '';
 
 const $ = id => document.getElementById(id);
 const appContent = $('appContent'), mainNav = $('mainNav'), subNav = $('subNav'), pageTitle = $('pageTitle');
@@ -241,7 +247,8 @@ function loadState(){
     merged.scheduleTodos = { ...base.scheduleTodos, ...(saved.scheduleTodos || {}) };
     merged.folders = (merged.folders || []).map(f => ({ ...f, notes: (f.notes || []).map(n => ({ pinned:false, tags:[], ...n })) }));
     merged.schedule = (merged.schedule || []).map(x => ({ color:'rose', pinned:false, tags:[], ...x }));
-    merged.tarotHistory = saved.tarotHistory || {}; merged.periods = saved.periods || [];
+    merged.tarotHistory = saved.tarotHistory || {};
+    merged.periodRecords = Array.isArray(saved.periodRecords) ? saved.periodRecords.filter(x => x && x.start && x.end) : [];
     return merged;
   } catch { return base; }
 }
@@ -264,7 +271,7 @@ function render(){
   if(currentMain==='home') renderDashboard();
   if(currentMain==='media') renderMedia();
   if(currentMain==='schedule') renderSchedule();
-  if(currentMain==='health') { if(currentSub==='period') renderPeriod(); else renderHealth(); }
+  if(currentMain==='health') renderHealth();
   if(currentMain==='reading') renderReading();
   if(currentMain==='tarot') renderTarot();
 }
@@ -384,7 +391,7 @@ function renderMonthSchedule(){
   for(let i=0;i<lead;i++)cells.push('<div class="month-day blank"></div>');
   for(let day=1;day<=days;day++){
     const date=`${monthKey}-${pad(day)}`, ev=monthEvents.filter(x=>x.date===date), selected=date===selectedMonthDate;
-    cells.push(`<button class="month-day ${selected?'selected':''} ${date===formatDate(new Date())?'today':''}" data-month-day="${date}"><span class="day-number">${day}</span><div class="event-chips">${ev.slice(0,2).map(x=>`<span style="--event:${colorOf(x).hex};--event-soft:${colorOf(x).soft}">${escapeHtml(x.title)}</span>`).join('')}${ev.length>2?`<small>+${ev.length-2}</small>`:''}</div></button>`);
+    cells.push(`<button class="month-day schedule-drop-zone ${selected?'selected':''} ${date===formatDate(new Date())?'today':''}" data-month-day="${date}" data-schedule-drop-date="${date}"><span class="day-number">${day}</span><div class="event-chips">${ev.slice(0,2).map(x=>`<span style="--event:${colorOf(x).hex};--event-soft:${colorOf(x).soft}">${escapeHtml(x.title)}</span>`).join('')}${ev.length>2?`<small>+${ev.length-2}</small>`:''}</div></button>`);
   }
   const selectedEvents=monthEvents.filter(x=>x.date===selectedMonthDate);
   appContent.innerHTML=`    ${periodTodoSection('month',todos,'本月 Todo')}
@@ -405,7 +412,7 @@ function renderWeekSchedule(){
   const days=Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(d.getDate()+i);return d;});
   appContent.innerHTML=`    ${periodTodoSection('week',todos,'本周 Todo')}
     <div class="calendar-toolbar"><button class="calendar-arrow" id="prevScheduleWeek">‹</button><h2>${formatShortDate(formatDate(start))} — ${formatShortDate(formatDate(end))}</h2><button class="calendar-arrow" id="nextScheduleWeek">›</button></div>
-    <div class="week-board">${days.map(d=>{const date=formatDate(d),ev=state.schedule.filter(x=>x.date===date).sort(sortSchedule);return `<section class="week-column ${date===formatDate(new Date())?'today-column':''}"><button class="week-heading" data-add-date="${date}"><strong>${['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]}</strong><span>${d.getMonth()+1}/${d.getDate()}</span></button><div>${ev.length?ev.map(x=>`<button class="week-event" style="--event:${colorOf(x).hex};--event-soft:${colorOf(x).soft}" data-edit-schedule="${x.id}"><small>${x.time||'全天'}</small><strong>${escapeHtml(x.title)}</strong></button>`).join(''):'<p class="week-empty">暂无安排</p>'}</div></section>`;}).join('')}</div>`;
+    <div class="week-board">${days.map(d=>{const date=formatDate(d),ev=state.schedule.filter(x=>x.date===date).sort(sortSchedule);return `<section class="week-column schedule-drop-zone ${date===formatDate(new Date())?'today-column':''}" data-schedule-drop-date="${date}"><button class="week-heading" data-add-date="${date}"><strong>${['周日','周一','周二','周三','周四','周五','周六'][d.getDay()]}</strong><span>${d.getMonth()+1}/${d.getDate()}</span></button><div>${ev.length?ev.map(x=>`<button class="week-event" style="--event:${colorOf(x).hex};--event-soft:${colorOf(x).soft}" data-edit-schedule="${x.id}"><small>${x.time||'全天'}</small><strong>${escapeHtml(x.title)}</strong></button>`).join(''):'<p class="week-empty">暂无安排</p>'}</div></section>`;}).join('')}</div>`;
   $('prevScheduleWeek').onclick=()=>{scheduleWeekDate=new Date(start);scheduleWeekDate.setDate(start.getDate()-7);render();};
   $('nextScheduleWeek').onclick=()=>{scheduleWeekDate=new Date(start);scheduleWeekDate.setDate(start.getDate()+7);render();};
   appContent.querySelectorAll('[data-add-date]').forEach(btn=>btn.onclick=()=>openScheduleModal(null,btn.dataset.addDate));
@@ -417,8 +424,170 @@ function renderScheduleListView(){
   appContent.innerHTML=`<div class="section-title"><h2>具体日程</h2><span>${filtered.length} 项</span></div><div class="card-list">${filtered.length?filtered.map(scheduleCardHtml).join(''):emptyHtml('◫','当前视图还没有日程。')}</div>`;
   bindScheduleCards();
 }
-function periodTodoSection(type,todos,title){todos=completedLast(todos);return `<div class="section-title"><h2>${title}</h2><span>${todos.filter(x=>x.done).length}/${todos.length} 已完成</span></div><div class="card-list sortable-list schedule-todo-list" id="periodTodoList">${todos.length?todos.map(x=>todoCardHtml(x,'schedule')).join(''):emptyHtml('✓',`还没有${title}，点右上角＋添加。`)}</div>`;}
-function enableTodoSortForPeriod(type,key){enablePointerSort($('periodTodoList'),ids=>{const all=state.scheduleTodos[type]||[], inPeriod=completedLast(ids.map(id=>all.find(x=>x.id===id)).filter(Boolean)), others=all.filter(x=>x.period!==key);state.scheduleTodos[type]=[...others,...inPeriod];saveState();render();});}
+function periodTodoSection(type,todos,title){todos=completedLast(todos);return `<div class="section-title"><div><h2>${title}</h2><small class="schedule-drag-hint">长按右侧把手，可排序或拖到下方日期</small></div><span>${todos.filter(x=>x.done).length}/${todos.length} 已完成</span></div><div class="card-list sortable-list schedule-todo-list" id="periodTodoList">${todos.length?todos.map(x=>todoCardHtml(x,'schedule')).join(''):emptyHtml('✓',`还没有${title}，点右上角＋添加。`)}</div>`;}
+function archiveScheduleTodo(type,todoId,date){
+  const list=state.scheduleTodos[type]||[];
+  const todo=list.find(x=>x.id===todoId);
+  if(!todo)return;
+  state.scheduleTodos[type]=list.filter(x=>x.id!==todoId);
+  state.schedule.push({
+    id:uid(),
+    title:todo.title,
+    date,
+    time:'',
+    color:'rose',
+    tags:[],
+    pinned:false,
+    note:todo.note||''
+  });
+  selectedMonthDate=date;
+  saveState();
+  showToast(`已归档到 ${formatShortDate(date)}`);
+  render();
+}
+function enableTodoSortForPeriod(type,key){
+  const container=$('periodTodoList');
+  if(!container)return;
+  const handles=[...container.querySelectorAll('[data-drag-handle]')];
+  if(!handles.length)return;
+
+  let item=null,ghost=null,placeholder=null,holdTimer=null;
+  let offsetX=0,offsetY=0,lastX=0,lastY=0,started=false,activeDrop=null,originalIndex=-1;
+
+  const clearHold=()=>{if(holdTimer){clearTimeout(holdTimer);holdTimer=null;}};
+  const zones=()=>[...appContent.querySelectorAll('[data-schedule-drop-date]')];
+
+  const clearDropState=()=>{
+    zones().forEach(z=>z.classList.remove('drop-ready','drop-active'));
+    activeDrop=null;
+  };
+
+  const setDropTarget=target=>{
+    if(activeDrop===target)return;
+    if(activeDrop)activeDrop.classList.remove('drop-active');
+    activeDrop=target;
+    if(activeDrop)activeDrop.classList.add('drop-active');
+  };
+
+  const createGhost=(source,rect)=>{
+    const clone=source.cloneNode(true);
+    clone.classList.remove('dragging','done');
+    clone.classList.add('schedule-drag-ghost');
+    clone.querySelectorAll('input,button').forEach(el=>el.setAttribute('tabindex','-1'));
+    clone.style.width=`${rect.width}px`;
+    clone.style.height=`${rect.height}px`;
+    document.body.appendChild(clone);
+    return clone;
+  };
+
+  const updateGhost=(x,y)=>{
+    if(!ghost)return;
+    ghost.style.transform=`translate3d(${Math.round(x-offsetX)}px,${Math.round(y-offsetY)}px,0) rotate(1deg)`;
+  };
+
+  const begin=(handle,e)=>{
+    item=handle.closest('.sortable-item');
+    if(!item)return;
+    const rect=item.getBoundingClientRect();
+    originalIndex=[...container.querySelectorAll('.sortable-item')].indexOf(item);
+    offsetX=e.clientX-rect.left;
+    offsetY=e.clientY-rect.top;
+    lastX=e.clientX;lastY=e.clientY;
+    placeholder=document.createElement('div');
+    placeholder.className='schedule-drag-placeholder';
+    placeholder.style.height=`${rect.height}px`;
+    item.parentNode.insertBefore(placeholder,item);
+    item.classList.add('schedule-drag-source');
+    ghost=createGhost(item,rect);
+    updateGhost(e.clientX,e.clientY);
+    zones().forEach(z=>z.classList.add('drop-ready'));
+    document.body.classList.add('is-sorting','is-archiving-schedule');
+    navigator.vibrate?.(20);
+    started=true;
+    try{handle.setPointerCapture(e.pointerId);}catch{}
+  };
+
+  const move=(e)=>{
+    if(!started||!item)return;
+    lastX=e.clientX;lastY=e.clientY;
+    updateGhost(lastX,lastY);
+
+    const under=document.elementFromPoint(lastX,lastY);
+    const drop=under?.closest?.('[data-schedule-drop-date]');
+    setDropTarget(drop||null);
+
+    if(!drop){
+      const target=under?.closest?.('.sortable-item');
+      if(target&&target!==item&&target.parentElement===container){
+        const rect=target.getBoundingClientRect();
+        container.insertBefore(placeholder,lastY<rect.top+rect.height/2?target:target.nextSibling);
+      }
+    }
+
+    const edge=84,step=16;
+    if(lastY<edge)window.scrollBy(0,-step);
+    else if(lastY>window.innerHeight-edge)window.scrollBy(0,step);
+  };
+
+  const finish=()=>{
+    clearHold();
+    if(!started||!item){
+      item=null;started=false;
+      return;
+    }
+    const todoId=item.dataset.sortId;
+    const dropDate=activeDrop?.dataset.scheduleDropDate||'';
+
+    ghost?.remove();
+    ghost=null;
+    item.classList.remove('schedule-drag-source');
+    if(placeholder?.parentNode)placeholder.parentNode.replaceChild(item,placeholder);
+    placeholder=null;
+    clearDropState();
+    document.body.classList.remove('is-sorting','is-archiving-schedule');
+    started=false;
+
+    if(dropDate){
+      archiveScheduleTodo(type,todoId,dropDate);
+      item=null;
+      return;
+    }
+
+    const ids=[...container.querySelectorAll('.sortable-item')].map(x=>x.dataset.sortId);
+    const newIndex=ids.indexOf(todoId);
+    if(newIndex!==originalIndex){
+      const all=state.scheduleTodos[type]||[];
+      const ordered=ids.map(id=>all.find(x=>x.id===id)).filter(Boolean);
+      const others=all.filter(x=>x.period!==key);
+      state.scheduleTodos[type]=[...others,...ordered];
+      saveState();
+      showToast('顺序已调整');
+      render();
+    }
+    item=null;
+  };
+
+  handles.forEach(handle=>{
+    handle.style.touchAction='none';
+    handle.addEventListener('pointerdown',e=>{
+      if(e.button!==undefined&&e.button!==0)return;
+      clearHold();
+      lastX=e.clientX;lastY=e.clientY;
+      holdTimer=setTimeout(()=>begin(handle,e),150);
+    });
+    handle.addEventListener('pointermove',e=>{
+      if(!started){
+        if(Math.hypot(e.clientX-lastX,e.clientY-lastY)>10)clearHold();
+        return;
+      }
+      e.preventDefault();
+      move(e);
+    });
+    handle.addEventListener('pointerup',finish);
+    handle.addEventListener('pointercancel',finish);
+    handle.addEventListener('lostpointercapture',()=>{if(started)finish();});
+  });
+}
 function bindScheduleTodoActions(type){
   appContent.querySelectorAll('[data-toggle-schedule-todo]').forEach(el=>el.onchange=()=>{const x=state.scheduleTodos[type].find(i=>i.id===el.dataset.toggleScheduleTodo);if(x)x.done=el.checked;saveState();render();});
   appContent.querySelectorAll('[data-delete-schedule-todo]').forEach(el=>el.onclick=()=>{state.scheduleTodos[type]=state.scheduleTodos[type].filter(x=>x.id!==el.dataset.deleteScheduleTodo);saveState();render();});
@@ -431,32 +600,80 @@ function renderHealth(){
   if(currentSub==='exerciseLog'){
     appContent.innerHTML=`<div class="card-list">${state.exercises.length?[...state.exercises].reverse().map(x=>`<div class="card"><div class="card-row"><div class="grow"><h3>${escapeHtml(x.type)}</h3><p>${x.date} · ${x.minutes} 分钟${x.note?'<br>'+escapeHtml(x.note):''}</p></div><button class="icon-btn danger" data-delete-exercise="${x.id}">×</button></div></div>`).join(''):emptyHtml('🏃','还没有运动记录。')}</div>`;
     appContent.querySelectorAll('[data-delete-exercise]').forEach(btn=>btn.onclick=()=>{state.exercises=state.exercises.filter(x=>x.id!==btn.dataset.deleteExercise);saveState();render();});
-  }else{
+  }else if(currentSub==='exerciseTime'){
     const total=state.exercises.reduce((n,x)=>n+Number(x.minutes||0),0), month=formatDate(new Date()).slice(0,7), thisMonth=state.exercises.filter(x=>x.date.startsWith(month)).reduce((n,x)=>n+Number(x.minutes||0),0), days=new Set(state.exercises.map(x=>x.date)).size;
     appContent.innerHTML=`<div class="stat-grid"><div class="stat-card"><span>累计运动</span><strong>${total}</strong><span>分钟</span></div><div class="stat-card"><span>本月运动</span><strong>${thisMonth}</strong><span>分钟</span></div><div class="stat-card"><span>运动天数</span><strong>${days}</strong><span>天</span></div><div class="stat-card"><span>平均每次</span><strong>${state.exercises.length?Math.round(total/state.exercises.length):0}</strong><span>分钟</span></div></div>`;quickAddBtn.style.display='none';
+  }else{
+    renderPeriodCalendar();
   }
 }
 
-function renderPeriod(){
-  const today=new Date();
-  const rec=state.periods||[];
-  appContent.innerHTML=`<div class="card period-card">
-  <h2>🌙 经期记录</h2>
-  <p>选择开始日期和结束日期，完整周期会在月历中标记。</p>
-  <div class="form-group"><label>开始日期</label><input class="input" type="date" id="periodStart"></div>
-  <div class="form-group"><label>结束日期</label><input class="input" type="date" id="periodEnd"></div>
-  <button class="primary-btn" id="savePeriod">保存本次记录</button>
-  </div>
-  <div class="card"><h3>历史记录</h3>${rec.length?rec.map(x=>`<p>🌸 ${x.start} - ${x.end} · ${x.days}天</p>`).join(''):'暂无记录'}</div>`;
-  $('savePeriod').onclick=()=>{
-    const s=$('periodStart').value,e=$('periodEnd').value;
-    if(!s||!e||e<s)return alert('请选择正确日期');
-    const days=Math.floor((new Date(e)-new Date(s))/86400000)+1;
-    state.periods.push({id:uid(),start:s,end:e,days});
-    saveState();render();
-  };
+function renderPeriodCalendar(){
+  quickAddBtn.style.display='none';
+  const y=periodCalendarDate.getFullYear(), m=periodCalendarDate.getMonth();
+  const prefix=`${y}-${pad(m+1)}`, days=new Date(y,m+1,0).getDate(), lead=new Date(y,m,1).getDay();
+  const records=[...(state.periodRecords||[])].sort((a,b)=>b.start.localeCompare(a.start));
+  const cells=[];
+  for(let i=0;i<lead;i++)cells.push('<span class="period-day blank"></span>');
+  for(let d=1;d<=days;d++){
+    const date=`${prefix}-${pad(d)}`;
+    const record=records.find(x=>date>=x.start&&date<=x.end);
+    const preview=periodDraftStart && date>=periodDraftStart && date<=(periodDraftEnd||periodDraftStart);
+    const classes=['period-day',record?'in-period':'',preview?'period-preview':'',date===periodDraftStart?'range-start':'',date===periodDraftEnd?'range-end':''].filter(Boolean).join(' ');
+    cells.push(`<button class="${classes}" data-period-day="${date}"><span>${d}</span>${record?'<i></i>':''}</button>`);
+  }
+  const monthRecords=records.filter(x=>x.start<=`${prefix}-${pad(days)}`&&x.end>=`${prefix}-01`);
+  const list=monthRecords.length?monthRecords.map(x=>{
+    const duration=daysBetweenInclusive(x.start,x.end);
+    return `<div class="period-record-card"><div><strong>${formatShortDate(x.start)} — ${formatShortDate(x.end)}</strong><span>${duration} 天</span></div><button class="icon-btn danger" data-delete-period="${x.id}" aria-label="删除经期记录">×</button></div>`;
+  }).join(''):'<p class="soft-empty period-empty">本月还没有经期记录。</p>';
+  appContent.innerHTML=`
+    <div class="period-shell" id="periodSwipeArea">
+      <div class="calendar-toolbar period-toolbar"><button class="calendar-arrow" id="prevPeriodMonth">‹</button><h2>${y} 年 ${m+1} 月</h2><button class="calendar-arrow" id="nextPeriodMonth">›</button></div>
+      <p class="period-hint">可左右滑动切换月份；点击日期选择开始与结束。</p>
+      <div class="weekday-row"><span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span></div>
+      <div class="period-calendar-grid">${cells.join('')}</div>
+      <div class="period-range-panel">
+        <label><span>开始日期</span><input class="input" id="periodStartInput" type="date" value="${periodDraftStart}"></label>
+        <label><span>结束日期</span><input class="input" id="periodEndInput" type="date" value="${periodDraftEnd}"></label>
+        <button class="primary-btn" id="savePeriodBtn" ${periodDraftStart&&periodDraftEnd?'':'disabled'}>保存经期记录</button>
+        ${periodDraftStart?'<button class="period-clear-btn" id="clearPeriodDraft">清除选择</button>':''}
+      </div>
+      <div class="section-title period-list-title"><h2>本月经期</h2><span>${monthRecords.length} 次</span></div>
+      <div class="period-record-list">${list}</div>
+    </div>`;
+  $('prevPeriodMonth').onclick=()=>changePeriodMonth(-1);
+  $('nextPeriodMonth').onclick=()=>changePeriodMonth(1);
+  appContent.querySelectorAll('[data-period-day]').forEach(btn=>btn.onclick=()=>selectPeriodDay(btn.dataset.periodDay));
+  const startInput=$('periodStartInput'),endInput=$('periodEndInput');
+  startInput.onchange=()=>{periodDraftStart=startInput.value;if(periodDraftEnd&&periodDraftEnd<periodDraftStart)periodDraftEnd=periodDraftStart;render();};
+  endInput.onchange=()=>{periodDraftEnd=endInput.value;if(periodDraftStart&&periodDraftEnd<periodDraftStart){const t=periodDraftStart;periodDraftStart=periodDraftEnd;periodDraftEnd=t;}render();};
+  $('savePeriodBtn').onclick=savePeriodRecord;
+  if($('clearPeriodDraft'))$('clearPeriodDraft').onclick=()=>{periodDraftStart='';periodDraftEnd='';render();};
+  appContent.querySelectorAll('[data-delete-period]').forEach(btn=>btn.onclick=()=>{const item=records.find(x=>x.id===btn.dataset.deletePeriod);if(item&&confirm(`确定删除 ${formatShortDate(item.start)} 至 ${formatShortDate(item.end)} 的经期记录吗？`)){state.periodRecords=state.periodRecords.filter(x=>x.id!==item.id);saveState();render();}});
+  enablePeriodSwipe($('periodSwipeArea'));
 }
-
+function changePeriodMonth(delta){periodCalendarDate=new Date(periodCalendarDate.getFullYear(),periodCalendarDate.getMonth()+delta,1);render();}
+function selectPeriodDay(date){
+  if(!periodDraftStart || (periodDraftStart&&periodDraftEnd)){periodDraftStart=date;periodDraftEnd='';}
+  else if(date<periodDraftStart){periodDraftEnd=periodDraftStart;periodDraftStart=date;}
+  else periodDraftEnd=date;
+  render();
+}
+function savePeriodRecord(){
+  if(!periodDraftStart||!periodDraftEnd)return;
+  let start=periodDraftStart,end=periodDraftEnd;if(end<start)[start,end]=[end,start];
+  state.periodRecords=state.periodRecords||[];
+  state.periodRecords.push({id:uid(),start,end,createdAt:new Date().toISOString()});
+  state.periodRecords.sort((a,b)=>a.start.localeCompare(b.start));
+  saveState();periodCalendarDate=startOfMonth(new Date(start+'T00:00:00'));periodDraftStart='';periodDraftEnd='';render();showToast(`已记录 ${daysBetweenInclusive(start,end)} 天经期`);
+}
+function daysBetweenInclusive(start,end){const a=new Date(start+'T00:00:00'),b=new Date(end+'T00:00:00');return Math.round((b-a)/86400000)+1;}
+function enablePeriodSwipe(el){
+  if(!el)return;let startX=0,startY=0,tracking=false;
+  el.addEventListener('touchstart',e=>{const t=e.touches[0];startX=t.clientX;startY=t.clientY;tracking=true;},{passive:true});
+  el.addEventListener('touchend',e=>{if(!tracking)return;tracking=false;const t=e.changedTouches[0],dx=t.clientX-startX,dy=t.clientY-startY;if(Math.abs(dx)>65&&Math.abs(dx)>Math.abs(dy)*1.25)changePeriodMonth(dx<0?1:-1);},{passive:true});
+}
 function renderReading(){
   if(currentSub==='booklist'){
     appContent.innerHTML=`<div class="card-list">${state.books.length?state.books.map(b=>`<div class="card"><div class="card-row"><div class="grow"><h3>${escapeHtml(b.title)}</h3><p>${escapeHtml(b.author||'作者未填写')} · ${b.status}</p><div class="progress"><div style="width:${Number(b.progress)||0}%"></div></div></div><button class="icon-btn danger" data-delete-book="${b.id}">×</button></div></div>`).join(''):emptyHtml('📚','还没有添加书籍。')}</div>`;
@@ -650,6 +867,7 @@ function normalizeImportedState(incoming){
   merged.folders=(merged.folders||[]).map(f=>({...f,notes:(f.notes||[]).map(n=>({pinned:false,tags:[],...n}))}));
   merged.schedule=(merged.schedule||[]).map(x=>({color:'rose',pinned:false,tags:[],...x}));
   merged.tarotHistory=incoming.tarotHistory||{};
+  merged.periodRecords=Array.isArray(incoming.periodRecords)?incoming.periodRecords.filter(x=>x&&x.start&&x.end):[];
   return merged;
 }
 function openBackupModal(){
@@ -764,7 +982,7 @@ function showToast(message){
   toast.textContent=message;toast.classList.add('show');clearTimeout(showToast.timer);showToast.timer=setTimeout(()=>toast.classList.remove('show'),1800);
 }
 
-function openModal(title,html){modalTitle.textContent=title;modalBody.innerHTML=html;modal.classList.remove('hidden');}
+function openModal(title,html){modalTitle.textContent=title;modalBody.innerHTML=html;modal.classList.remove('hidden');const closeBtn=$('closeModalBtn');if(closeBtn){closeBtn.textContent='关闭';closeBtn.onclick=closeModal;}}
 function closeModal(){modal.classList.add('hidden');modalBody.innerHTML='';}
 function emptyHtml(icon,text){return `<div class="empty"><div class="empty-icon">${icon}</div><div>${text}</div></div>`;}
 function tagHtml(tags=[]){return tags?.length?`<div class="tag-row">${tags.map(t=>`<span>#${escapeHtml(t)}</span>`).join('')}</div>`:'';}
@@ -782,5 +1000,133 @@ function sortSchedule(a,b){return (a.date+(a.time||'99:99')).localeCompare(b.dat
 function escapeHtml(v=''){return String(v).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
 function escapeAttr(v=''){return escapeHtml(v);}
 
-if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js');
+function parseVersionParts(value){
+  return String(value||'0').replace(/^v/i,'').split(/[^0-9]+/).filter(Boolean).map(Number);
+}
+function isNewerVersion(remote,current){
+  const a=parseVersionParts(remote),b=parseVersionParts(current),len=Math.max(a.length,b.length);
+  for(let i=0;i<len;i++){const x=a[i]||0,y=b[i]||0;if(x!==y)return x>y;}
+  return false;
+}
+function updateSnoozed(version){
+  try{
+    const data=JSON.parse(localStorage.getItem(UPDATE_SNOOZE_KEY)||'{}');
+    return data.version===version && Number(data.until||0)>Date.now();
+  }catch{return false;}
+}
+function snoozeUpdate(version){
+  localStorage.setItem(UPDATE_SNOOZE_KEY,JSON.stringify({version,until:Date.now()+12*60*60*1000}));
+}
+async function fetchRemoteVersion(){
+  const response=await fetch(`${VERSION_URL}?t=${Date.now()}`,{cache:'no-store',headers:{'Cache-Control':'no-cache'}});
+  if(!response.ok)throw new Error('version-check-failed');
+  return response.json();
+}
+function showUpdatePrompt(info){
+  const remote=String(info.version||'').replace(/^v/i,'');
+  openModal(`发现新版本 V${remote}`,`
+    <div class="app-update-panel">
+      <div class="app-update-icon">✨</div>
+      <h3>发现新的工作台版本 V${escapeHtml(remote)}</h3>
+      <p>${escapeHtml(info.message||'是否立即更新？更新后会自动刷新缓存并重新打开工作台。')}</p>
+      <button id="applyAppUpdate" class="primary-btn">立即更新</button>
+      <button id="snoozeAppUpdate" class="secondary-btn">稍后提醒</button>
+    </div>
+  `);
+  const closeBtn=$('closeModalBtn');
+  if(closeBtn)closeBtn.textContent='稍后';
+  $('snoozeAppUpdate').onclick=()=>{
+    snoozeUpdate(remote);
+    if(closeBtn)closeBtn.textContent='关闭';
+    closeModal();
+  };
+  if(closeBtn)closeBtn.onclick=()=>{
+    snoozeUpdate(remote);
+    closeBtn.textContent='关闭';
+    closeModal();
+  };
+  $('applyAppUpdate').onclick=()=>applyAppUpdate(remote);
+}
+async function clearOldAppCaches(remoteVersion){
+  if(!('caches' in window))return;
+  const keep=`personal-workbench-v${remoteVersion}`;
+  const keys=await caches.keys();
+  await Promise.all(keys.map(key=>{
+    if(key.startsWith('personal-workbench-v') && key!==keep)return caches.delete(key);
+    return Promise.resolve();
+  }));
+}
+async function applyAppUpdate(remoteVersion){
+  const button=$('applyAppUpdate');
+  if(button){button.disabled=true;button.textContent='正在更新…';}
+  localStorage.removeItem(UPDATE_SNOOZE_KEY);
+  try{
+    const registration=await navigator.serviceWorker?.getRegistration();
+    let reloaded=false;
+    const reload=()=>{
+      if(reloaded)return;
+      reloaded=true;
+      const url=new URL(location.href);
+      url.searchParams.set('app-version',remoteVersion);
+      url.searchParams.set('refresh',Date.now());
+      location.replace(url.toString());
+    };
+    if(navigator.serviceWorker){
+      navigator.serviceWorker.addEventListener('controllerchange',reload,{once:true});
+    }
+    if(registration){
+      await registration.update();
+      if(registration.waiting)registration.waiting.postMessage({type:'SKIP_WAITING'});
+      if(registration.installing){
+        registration.installing.addEventListener('statechange',()=>{
+          if(registration.waiting)registration.waiting.postMessage({type:'SKIP_WAITING'});
+        });
+      }
+    }
+    await new Promise(resolve=>setTimeout(resolve,1400));
+    await clearOldAppCaches(remoteVersion);
+    reload();
+  }catch(error){
+    try{await clearOldAppCaches(remoteVersion);}catch{}
+    const url=new URL(location.href);
+    url.searchParams.set('app-version',remoteVersion);
+    url.searchParams.set('refresh',Date.now());
+    location.replace(url.toString());
+  }
+}
+let lastVersionCheckAt=0;
+async function checkForAppUpdate(force=false){
+  if(!navigator.onLine)return;
+  if(!force && Date.now()-lastVersionCheckAt<5*60*1000)return;
+  lastVersionCheckAt=Date.now();
+  try{
+    const info=await fetchRemoteVersion();
+    const remote=String(info.version||'').replace(/^v/i,'');
+    if(remote && isNewerVersion(remote,APP_VERSION) && !updateSnoozed(remote)){
+      showUpdatePrompt(info);
+    }
+  }catch(error){
+    console.warn('版本检查暂时不可用',error);
+  }
+}
+async function setupAutoUpdate(){
+  if(!('serviceWorker' in navigator)){
+    checkForAppUpdate(true);
+    return;
+  }
+  try{
+    const registration=await navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'});
+    await registration.update();
+    if(registration.waiting)registration.waiting.postMessage({type:'SKIP_WAITING'});
+  }catch(error){
+    console.warn('Service Worker 注册失败',error);
+  }
+  checkForAppUpdate(true);
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible')checkForAppUpdate();
+  });
+  window.addEventListener('online',()=>checkForAppUpdate(true));
+}
+
 render();
+setupAutoUpdate();
