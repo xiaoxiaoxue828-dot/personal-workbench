@@ -652,3 +652,258 @@ body.is-archiving-schedule *{
     font-size:22px;
   }
 }
+
+
+/* V3.8 自媒体事项编辑 */
+.edit-todo-btn{
+  color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 10%,transparent);
+}
+.edit-todo-btn:hover{
+  background:color-mix(in srgb,var(--accent) 18%,transparent);
+}
+
+/* V3.8 经期月度统计 */
+.period-stats-title{
+  margin-top:26px;
+}
+.period-stats-list{
+  display:grid;
+  gap:12px;
+}
+.period-stat-month{
+  border:1px solid var(--line);
+  border-radius:18px;
+  background:rgba(255,255,255,.72);
+  padding:14px;
+  box-shadow:0 8px 24px rgba(97,73,94,.06);
+}
+.period-stat-heading{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  margin-bottom:10px;
+}
+.period-stat-heading strong{
+  font-size:16px;
+  color:var(--text);
+}
+.period-stat-heading span{
+  font-size:12px;
+  color:var(--accent);
+  font-weight:700;
+}
+.period-stat-items{
+  display:grid;
+  gap:7px;
+}
+.period-stat-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding-top:7px;
+  border-top:1px dashed var(--line);
+  font-size:13px;
+  color:var(--muted);
+}
+.period-stat-item b{
+  color:var(--text);
+  white-space:nowrap;
+}
+
+
+/* V3.9 粉丝数量入口与粉丝中心 */
+.follower-title-button{
+  cursor:pointer;
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  width:max-content;
+  max-width:100%;
+  padding:2px 0;
+  color:var(--accent);
+  font-size:30px;
+  font-variant-numeric:tabular-nums;
+  transition:transform .18s ease,opacity .18s ease;
+}
+.follower-title-button::after{
+  content:'›';
+  font-size:22px;
+  opacity:.55;
+}
+.follower-title-button:active{
+  transform:scale(.97);
+  opacity:.72;
+}
+.follower-center{
+  display:grid;
+  gap:22px;
+  padding-bottom:6px;
+}
+.follower-summary-card{
+  position:relative;
+  display:grid;
+  justify-items:center;
+  gap:5px;
+  overflow:hidden;
+  padding:24px 18px;
+  border:1px solid rgba(181,132,153,.22);
+  border-radius:24px;
+  background:
+    radial-gradient(circle at 82% 18%,rgba(255,255,255,.9),transparent 24%),
+    linear-gradient(145deg,#f9eaf0,#eee7f6);
+  box-shadow:0 16px 38px rgba(113,75,101,.12);
+}
+.follower-summary-card::before{
+  content:'✦';
+  position:absolute;
+  top:13px;
+  right:17px;
+  color:rgba(155,111,140,.35);
+  font-size:22px;
+}
+.follower-summary-card span,
+.follower-summary-card small{
+  color:var(--muted);
+}
+.follower-summary-card strong{
+  color:var(--accent);
+  font-size:38px;
+  line-height:1.1;
+  font-variant-numeric:tabular-nums;
+}
+.follower-growth-badge{
+  margin-top:8px;
+  padding:6px 11px;
+  border-radius:999px;
+  background:rgba(109,155,126,.13);
+  color:#568568;
+  font-size:12px;
+  font-weight:800;
+}
+.follower-growth-badge.down{
+  background:rgba(197,113,128,.12);
+  color:#b05f72;
+}
+.follower-form{
+  display:grid;
+  gap:12px;
+}
+.follower-section{
+  display:grid;
+  gap:10px;
+}
+.follower-trend-list,
+.follower-timeline{
+  display:grid;
+  gap:10px;
+}
+.follower-trend-row{
+  display:grid;
+  grid-template-columns:56px minmax(90px,1fr) 78px;
+  align-items:center;
+  gap:10px;
+  padding:11px 12px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:rgba(255,255,255,.72);
+}
+.follower-trend-meta{
+  display:grid;
+  gap:2px;
+}
+.follower-trend-meta strong{
+  font-size:14px;
+}
+.follower-trend-meta span{
+  color:var(--muted);
+  font-size:10px;
+  white-space:nowrap;
+}
+.follower-trend-track{
+  height:8px;
+  overflow:hidden;
+  border-radius:999px;
+  background:rgba(151,127,157,.11);
+}
+.follower-trend-track i{
+  display:block;
+  height:100%;
+  border-radius:inherit;
+  background:linear-gradient(90deg,#d89aae,#a989bd);
+}
+.follower-trend-track i.down{
+  background:linear-gradient(90deg,#d7a2a9,#bf7788);
+}
+.follower-trend-row b{
+  color:#7d9a85;
+  font-size:12px;
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+.follower-trend-row b.down{
+  color:#b66d7f;
+}
+.follower-timeline-item{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  padding:12px 13px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  background:rgba(255,255,255,.72);
+}
+.follower-timeline-item>div:first-child{
+  display:grid;
+  gap:2px;
+}
+.follower-timeline-item strong{
+  color:var(--text);
+  font-size:17px;
+  font-variant-numeric:tabular-nums;
+}
+.follower-timeline-item span{
+  color:var(--muted);
+  font-size:12px;
+}
+.follower-record-actions{
+  display:flex;
+  gap:6px;
+}
+@media(max-width:430px){
+  .follower-title-button{font-size:27px}
+  .follower-trend-row{grid-template-columns:48px minmax(70px,1fr) 68px;gap:8px;padding:10px}
+  .follower-trend-meta span{font-size:9px}
+}
+
+
+/* V4.0 粉丝中心独立模块 */
+.follower-module{display:grid;gap:18px;max-width:920px;margin:0 auto}
+.follower-module-toolbar{display:flex;justify-content:flex-start}
+.follower-back-btn{width:auto;padding:9px 14px}
+.follower-summary-large{min-height:190px;align-content:center}
+.follower-summary-large strong{font-size:48px}
+.follower-module-card{display:grid;gap:14px;padding:18px;border:1px solid var(--line);border-radius:24px;background:rgba(255,255,255,.74);box-shadow:0 14px 34px rgba(91,67,89,.07)}
+.follower-form-inline{grid-template-columns:1fr 1fr auto;align-items:end}
+.follower-form-inline .primary-btn{width:auto;min-width:120px;margin-bottom:0}
+.follower-chart-wrap{display:grid;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.follower-chart-caption{color:var(--muted);font-size:12px}
+.follower-chart{display:block;width:100%;min-width:620px;overflow:visible}
+.follower-chart text{fill:var(--muted);font-size:11px}
+.follower-chart .chart-value{fill:var(--muted);font-size:10px}
+.chart-grid{stroke:rgba(125,97,124,.18);stroke-width:1}
+.follower-chart-area{fill:url(#followerAreaGradient)}
+.follower-chart-line{fill:none;stroke:#ad7898;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}
+.follower-chart-point circle{fill:#fff;stroke:#ad7898;stroke-width:3}
+.follower-timeline-full{grid-template-columns:repeat(2,minmax(0,1fr))}
+.follower-chart-empty{padding:34px 18px;border:1px dashed var(--line);border-radius:18px;color:var(--muted);text-align:center;background:rgba(255,255,255,.5)}
+@media(max-width:720px){
+  .follower-form-inline{grid-template-columns:1fr}
+  .follower-form-inline .primary-btn{width:100%}
+  .follower-timeline-full{grid-template-columns:1fr}
+  .follower-summary-large strong{font-size:42px}
+  .follower-module-card{padding:15px;border-radius:20px}
+}

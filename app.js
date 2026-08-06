@@ -2,7 +2,7 @@ const STORAGE_KEY = 'personal_workbench_v1';
 const BACKUP_META_KEY = 'personal_workbench_backup_meta_v1';
 const UPDATE_SNOOZE_KEY = 'personal_workbench_update_snooze_v1';
 const VERSION_URL = './version.json';
-const APP_VERSION = '3.7';
+const APP_VERSION = '4.0';
 
 const navigation = {
   home: { label: '首页', icon: '🏡', children: [{ id: 'overview', label: '今日概览', icon: '✨' }] },
@@ -30,7 +30,8 @@ const navigation = {
 
 const defaultData = {
   todos: { shoot: [], edit: [], food: [] }, folders: [{ id: uid(), name: '默认文件夹', notes: [] }],
-  schedule: [], scheduleTodos: { month: [], week: [] }, exercises: [], periodRecords: [], books: [], readingDays: {}, tags: [], tarotHistory: {}
+  schedule: [], scheduleTodos: { month: [], week: [] }, exercises: [], periodRecords: [],
+  followerRecords: [], books: [], readingDays: {}, tags: [], tarotHistory: {}
 };
 
 const majorArcana = [
@@ -213,6 +214,7 @@ const eventColors = {
 
 let state = loadState();
 let currentMain = 'home', currentSub = 'overview', currentFolderId = null, currentNoteId = null;
+let followerCenterOpen = false;
 let noteSaveTimer = null;
 let readingCalendarDate = startOfMonth(new Date());
 let scheduleMonthDate = startOfMonth(new Date());
@@ -223,7 +225,7 @@ let periodDraftStart = '';
 let periodDraftEnd = '';
 
 const $ = id => document.getElementById(id);
-const appContent = $('appContent'), mainNav = $('mainNav'), subNav = $('subNav'), pageTitle = $('pageTitle');
+const appContent = $('appContent'), mainNav = $('mainNav'), subNav = $('subNav'), pageTitle = $('pageTitle'), pageEyebrow = $('pageEyebrow');
 const quickAddBtn = $('quickAddBtn'), searchBtn = $('searchBtn'), backupBtn = $('backupBtn'), modal = $('modal'), modalTitle = $('modalTitle'), modalBody = $('modalBody'), appShell = $('appShell');
 $('closeModalBtn').onclick = closeModal;
 modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
@@ -249,6 +251,11 @@ function loadState(){
     merged.schedule = (merged.schedule || []).map(x => ({ color:'rose', pinned:false, tags:[], ...x }));
     merged.tarotHistory = saved.tarotHistory || {};
     merged.periodRecords = Array.isArray(saved.periodRecords) ? saved.periodRecords.filter(x => x && x.start && x.end) : [];
+    merged.followerRecords = Array.isArray(saved.followerRecords)
+      ? saved.followerRecords
+          .filter(x => x && x.date && Number.isFinite(Number(x.count)))
+          .map(x => ({ id:x.id||uid(), date:x.date, count:Math.max(0,Math.round(Number(x.count))) }))
+      : [];
     return merged;
   } catch { return base; }
 }
@@ -258,18 +265,43 @@ function renderNav(){
   const mains = Object.entries(navigation).filter(([,item]) => !item.hiddenFromMain);
   mainNav.style.gridTemplateColumns = `repeat(${mains.length},1fr)`;
   mainNav.innerHTML = mains.map(([id,item]) => `<button class="nav-btn ${id===currentMain?'active':''}" data-main="${id}"><span class="nav-icon">${item.icon}</span><span class="nav-label">${item.label}</span></button>`).join('');
-  mainNav.querySelectorAll('[data-main]').forEach(btn => btn.onclick = () => { currentMain=btn.dataset.main; currentSub=navigation[currentMain].children[0].id; currentFolderId=null; currentNoteId=null; render(); });
+  mainNav.querySelectorAll('[data-main]').forEach(btn => btn.onclick = () => { currentMain=btn.dataset.main; currentSub=navigation[currentMain].children[0].id; currentFolderId=null; currentNoteId=null; followerCenterOpen=false; render(); });
   const children = navigation[currentMain].children;
-  subNav.innerHTML = children.map(item => `<button class="nav-btn ${item.id===currentSub?'active':''}" data-sub="${item.id}"><span class="nav-icon">${item.icon}</span><span class="nav-label">${item.label}</span></button>`).join('');
-  subNav.querySelectorAll('[data-sub]').forEach(btn => btn.onclick = () => { currentSub=btn.dataset.sub; currentFolderId=null; currentNoteId=null; render(); });
+  subNav.innerHTML = followerCenterOpen && currentMain==='media' ? '' : children.map(item => `<button class="nav-btn ${item.id===currentSub?'active':''}" data-sub="${item.id}"><span class="nav-icon">${item.icon}</span><span class="nav-label">${item.label}</span></button>`).join('');
+  subNav.querySelectorAll('[data-sub]').forEach(btn => btn.onclick = () => { currentSub=btn.dataset.sub; currentFolderId=null; currentNoteId=null; followerCenterOpen=false; render(); });
   const hideSidebar = currentMain === 'home';
   subNav.classList.toggle('hidden-nav', hideSidebar); appShell.classList.toggle('no-sidebar', hideSidebar); appShell.classList.toggle('tarot-cottage', currentMain==='tarot');
 }
 function render(){
   renderNav(); backupBtn.style.display=currentMain==='home'?'grid':'none'; const main=navigation[currentMain], sub=main.children.find(x=>x.id===currentSub);
-  pageTitle.textContent=`${main.label} · ${sub.label}`; quickAddBtn.style.display='block';
+  pageTitle.classList.toggle('follower-title-button',currentMain==='media'&&!followerCenterOpen);
+  pageTitle.onclick=currentMain==='media'&&!followerCenterOpen?openFollowerCenter:null;
+  if(currentMain==='media'&&!followerCenterOpen){
+    pageEyebrow.textContent='粉丝数量';
+    pageTitle.textContent=formatFollowerCount(getLatestFollowerCount());
+    pageTitle.setAttribute('role','button');
+    pageTitle.setAttribute('tabindex','0');
+    pageTitle.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openFollowerCenter();}};
+    pageTitle.title='点击进入粉丝中心';
+  }else if(currentMain==='media'&&followerCenterOpen){
+    pageEyebrow.textContent='SOCIAL MEDIA';
+    pageTitle.textContent='粉丝中心';
+    pageTitle.removeAttribute('role');
+    pageTitle.removeAttribute('tabindex');
+    pageTitle.removeAttribute('title');
+    pageTitle.onclick=null;
+    pageTitle.onkeydown=null;
+  }else{
+    pageEyebrow.textContent='MY PERSONAL DESK';
+    pageTitle.textContent=`${main.label} · ${sub.label}`;
+    pageTitle.removeAttribute('role');
+    pageTitle.removeAttribute('tabindex');
+    pageTitle.removeAttribute('title');
+    pageTitle.onkeydown=null;
+  }
+  quickAddBtn.style.display='block';
   if(currentMain==='home') renderDashboard();
-  if(currentMain==='media') renderMedia();
+  if(currentMain==='media') followerCenterOpen?renderFollowerCenter():renderMedia();
   if(currentMain==='schedule') renderSchedule();
   if(currentMain==='health') renderHealth();
   if(currentMain==='reading') renderReading();
@@ -311,13 +343,176 @@ function renderDashboard(){
 function dashStat(icon,label,value,unit,main,sub){return `<button class="dash-stat" data-go="${main}|${sub}"><span>${icon}</span><small>${label}</small><strong>${value}<i>${unit}</i></strong></button>`;}
 function bindGlobalNavigation(){ appContent.querySelectorAll('[data-go]').forEach(btn=>btn.onclick=()=>{[currentMain,currentSub]=btn.dataset.go.split('|');currentFolderId=null;render();}); }
 
+
+function sortedFollowerRecords(){
+  return [...(state.followerRecords||[])].sort((a,b)=>a.date.localeCompare(b.date)||Number(a.count)-Number(b.count));
+}
+function getLatestFollowerRecord(){
+  return sortedFollowerRecords().at(-1)||null;
+}
+function getLatestFollowerCount(){
+  return Number(getLatestFollowerRecord()?.count||0);
+}
+function formatFollowerCount(value){
+  return Math.max(0,Number(value)||0).toLocaleString('zh-CN');
+}
+function followerMonthlyStats(){
+  const byMonth={};
+  sortedFollowerRecords().forEach(item=>{byMonth[item.date.slice(0,7)]=item;});
+  const months=Object.entries(byMonth).sort((a,b)=>a[0].localeCompare(b[0]));
+  return months.map(([month,item],index)=>{
+    const previous=index?months[index-1][1]:null;
+    return {
+      month,
+      count:Number(item.count),
+      growth:previous?Number(item.count)-Number(previous.count):null
+    };
+  });
+}
+function followerTrendMode(){
+  const records=sortedFollowerRecords();
+  if(records.length<2)return 'daily';
+  const first=new Date(records[0].date+'T00:00:00');
+  const last=new Date(records.at(-1).date+'T00:00:00');
+  const monthSpan=(last.getFullYear()-first.getFullYear())*12+(last.getMonth()-first.getMonth());
+  return monthSpan>=2?'monthly':'daily';
+}
+function followerTrendData(){
+  const records=sortedFollowerRecords();
+  const mode=followerTrendMode();
+  if(mode==='monthly'){
+    const byMonth={};
+    records.forEach(item=>{byMonth[item.date.slice(0,7)]=item;});
+    const points=Object.entries(byMonth).sort((a,b)=>a[0].localeCompare(b[0]));
+    return {
+      mode,
+      points:points.map(([key,item],index)=>({
+        key,
+        label:`${Number(key.slice(5))}月`,
+        date:item.date,
+        count:Number(item.count),
+        growth:index?Number(item.count)-Number(points[index-1][1].count):null
+      }))
+    };
+  }
+  return {
+    mode,
+    points:records.map((item,index)=>({
+      key:item.date,
+      label:formatShortDate(item.date),
+      date:item.date,
+      count:Number(item.count),
+      growth:index?Number(item.count)-Number(records[index-1].count):null
+    }))
+  };
+}
+function followerTrendChartHtml(){
+  const {mode,points}=followerTrendData();
+  if(points.length<2)return `<div class="follower-chart-empty">至少保存 2 条记录后，就能看到上涨趋势。</div>`;
+  const width=720,height=250,padX=46,padTop=25,padBottom=54;
+  const values=points.map(x=>x.count);
+  let min=Math.min(...values),max=Math.max(...values);
+  if(min===max){min=Math.max(0,min-1);max=max+1;}
+  const span=max-min,plotW=width-padX*2,plotH=height-padTop-padBottom;
+  const coords=points.map((point,index)=>{
+    const x=padX+(points.length===1?plotW/2:index*plotW/(points.length-1));
+    const y=padTop+(max-point.count)/span*plotH;
+    return {...point,x,y};
+  });
+  const line=coords.map((p,i)=>`${i?'L':'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+  const area=`M ${coords[0].x.toFixed(1)} ${(height-padBottom).toFixed(1)} ${coords.map(p=>`L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ')} L ${coords.at(-1).x.toFixed(1)} ${(height-padBottom).toFixed(1)} Z`;
+  const labelStep=Math.max(1,Math.ceil(points.length/6));
+  const labels=coords.map((p,i)=>{
+    if(i%labelStep!==0&&i!==coords.length-1)return '';
+    return `<text x="${p.x}" y="${height-20}" text-anchor="middle">${escapeHtml(p.label)}</text>`;
+  }).join('');
+  const dots=coords.map(p=>`<g class="follower-chart-point"><circle cx="${p.x}" cy="${p.y}" r="5"></circle><title>${escapeHtml(p.label)}：${formatFollowerCount(p.count)} 粉丝${p.growth===null?'':`，${p.growth>=0?'+':''}${formatFollowerCount(p.growth)}`}</title></g>`).join('');
+  return `<div class="follower-chart-wrap">
+    <div class="follower-chart-caption">${mode==='monthly'?'记录跨度达到两个月以上，已自动改为按月展示':'当前记录跨度较短，按每次记录日期展示'}</div>
+    <svg class="follower-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="粉丝上涨趋势">
+      <defs><linearGradient id="followerAreaGradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#bd87a6" stop-opacity=".34"></stop><stop offset="100%" stop-color="#bd87a6" stop-opacity=".03"></stop></linearGradient></defs>
+      <line class="chart-grid" x1="${padX}" y1="${padTop}" x2="${padX}" y2="${height-padBottom}"></line>
+      <line class="chart-grid" x1="${padX}" y1="${height-padBottom}" x2="${width-padX}" y2="${height-padBottom}"></line>
+      <path class="follower-chart-area" d="${area}"></path>
+      <path class="follower-chart-line" d="${line}"></path>
+      ${dots}${labels}
+      <text class="chart-value" x="${padX-8}" y="${padTop+4}" text-anchor="end">${formatFollowerCount(max)}</text>
+      <text class="chart-value" x="${padX-8}" y="${height-padBottom+4}" text-anchor="end">${formatFollowerCount(min)}</text>
+    </svg>
+  </div>`;
+}
+function openFollowerCenter(){
+  followerCenterOpen=true;
+  render();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function closeFollowerCenter(){
+  followerCenterOpen=false;
+  render();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function renderFollowerCenter(){
+  quickAddBtn.style.display='none';
+  subNav.classList.add('hidden-nav');
+  appShell.classList.add('no-sidebar');
+  const latest=getLatestFollowerRecord();
+  const records=sortedFollowerRecords().reverse();
+  const trend=followerTrendData();
+  const latestGrowth=trend.points.length>1?trend.points.at(-1).count-trend.points.at(-2).count:null;
+  appContent.innerHTML=`
+    <div class="follower-module">
+      <div class="follower-module-toolbar"><button id="backFromFollowerCenter" class="secondary-btn follower-back-btn">‹ 返回自媒体</button></div>
+      <section class="follower-summary-card follower-summary-large">
+        <span>当前粉丝</span><strong>${formatFollowerCount(latest?.count||0)}</strong>
+        <small>${latest?`更新于 ${formatShortDate(latest.date)}`:'还没有记录'}</small>
+        ${latestGrowth===null?'':`<div class="follower-growth-badge ${latestGrowth<0?'down':''}">${latestGrowth>=0?'↑':'↓'} ${formatFollowerCount(Math.abs(latestGrowth))} / 较上次${trend.mode==='monthly'?'月度':''}记录</div>`}
+      </section>
+      <section class="follower-module-card">
+        <div class="section-title"><h2>添加粉丝记录</h2><span>按日期保存</span></div>
+        <form id="followerRecordForm" class="follower-form follower-form-inline">
+          <div class="form-group"><label>日期</label><input class="input" type="date" name="date" value="${formatDate(new Date())}" required></div>
+          <div class="form-group"><label>粉丝数量</label><input class="input" type="number" name="count" min="0" step="1" inputmode="numeric" value="${latest?.count||''}" placeholder="例如：12580" required></div>
+          <button class="primary-btn">保存记录</button>
+        </form>
+      </section>
+      <section class="follower-module-card">
+        <div class="section-title"><h2>上涨趋势</h2><span>${trend.mode==='monthly'?'按月统计':'按记录日期统计'}</span></div>
+        ${followerTrendChartHtml()}
+      </section>
+      <section class="follower-module-card">
+        <div class="section-title"><h2>粉丝时间轴</h2><span>${records.length} 条记录</span></div>
+        <div class="follower-timeline follower-timeline-full">
+          ${records.length?records.map(item=>`<div class="follower-timeline-item"><div><strong>${formatFollowerCount(item.count)}</strong><span>${formatShortDate(item.date)}</span></div><div class="follower-record-actions"><button class="icon-btn" data-edit-follower="${item.id}" aria-label="编辑">✎</button><button class="icon-btn danger" data-delete-follower="${item.id}" aria-label="删除">×</button></div></div>`).join(''):'<p class="soft-empty">还没有粉丝记录。</p>'}
+        </div>
+      </section>
+    </div>`;
+  $('backFromFollowerCenter').onclick=closeFollowerCenter;
+  $('followerRecordForm').onsubmit=e=>{
+    e.preventDefault();
+    const f=new FormData(e.target),date=String(f.get('date')||''),count=Math.max(0,Math.round(Number(f.get('count'))||0));
+    const existing=(state.followerRecords||[]).find(x=>x.date===date);
+    if(existing)existing.count=count;else state.followerRecords.push({id:uid(),date,count});
+    saveState();render();
+  };
+  appContent.querySelectorAll('[data-edit-follower]').forEach(btn=>btn.onclick=()=>{
+    const item=state.followerRecords.find(x=>x.id===btn.dataset.editFollower);
+    if(!item)return;
+    const form=$('followerRecordForm');form.elements.date.value=item.date;form.elements.count.value=item.count;form.elements.count.focus();form.scrollIntoView({behavior:'smooth',block:'center'});
+  });
+  appContent.querySelectorAll('[data-delete-follower]').forEach(btn=>btn.onclick=()=>{
+    const item=state.followerRecords.find(x=>x.id===btn.dataset.deleteFollower);
+    if(!item||!confirm(`确定删除 ${formatShortDate(item.date)} 的粉丝记录吗？`))return;
+    state.followerRecords=state.followerRecords.filter(x=>x.id!==item.id);saveState();render();
+  });
+}
+
 function renderMedia(){ if(['shoot','edit','food'].includes(currentSub)) renderTodoList(currentSub); else renderCopywriting(); }
 function renderTodoList(type){
   const list=completedLast(state.todos[type]||[]);
   appContent.innerHTML=`<div class="section-title"><h2>全部事项</h2><span>${list.filter(x=>x.done).length}/${list.length} 已完成</span></div><div class="card-list sortable-list" id="mediaTodoList">${list.length?list.map(todo=>todoCardHtml(todo,'media')).join(''):emptyHtml('✓','这里还没有事项，点右上角＋新建。')}</div>`;
   bindTodoActions(type); enablePointerSort($('mediaTodoList'), ids=>{const byId=new Map((state.todos[type]||[]).map(x=>[x.id,x]));state.todos[type]=completedLast(ids.map(id=>byId.get(id)).filter(Boolean));saveState();render();});
 }
-function todoCardHtml(todo,kind){return `<div class="card ${todo.done?'done':''} sortable-item" data-sort-id="${todo.id}"><div class="card-row"><input class="todo-check" type="checkbox" ${todo.done?'checked':''} data-toggle-${kind}-todo="${todo.id}"><div class="grow"><h3>${escapeHtml(todo.title)}</h3>${todo.note?`<p>${escapeHtml(todo.note)}</p>`:''}</div><button class="icon-btn danger" data-delete-${kind}-todo="${todo.id}">×</button><button class="drag-handle drag-handle-right" data-drag-handle aria-label="按住拖拽排序">⋮⋮</button></div></div>`;}
+function todoCardHtml(todo,kind){return `<div class="card ${todo.done?'done':''} sortable-item" data-sort-id="${todo.id}"><div class="card-row"><input class="todo-check" type="checkbox" ${todo.done?'checked':''} data-toggle-${kind}-todo="${todo.id}"><div class="grow"><h3>${escapeHtml(todo.title)}</h3>${todo.note?`<p>${escapeHtml(todo.note)}</p>`:''}</div>${kind==='media'?`<button class="icon-btn edit-todo-btn" data-edit-media-todo="${todo.id}" aria-label="编辑事项">✎</button>`:''}<button class="icon-btn danger" data-delete-${kind}-todo="${todo.id}">×</button><button class="drag-handle drag-handle-right" data-drag-handle aria-label="按住拖拽排序">⋮⋮</button></div></div>`;}
 function bindTodoActions(type){
   appContent.querySelectorAll('[data-toggle-media-todo]').forEach(el=>el.onchange=()=>{
     const id=el.dataset.toggleMediaTodo;
@@ -330,6 +525,7 @@ function bindTodoActions(type){
     }
     x.done=el.checked;saveState();render();
   });
+  appContent.querySelectorAll('[data-edit-media-todo]').forEach(el=>el.onclick=()=>openTodoModal(type,el.dataset.editMediaTodo));
   appContent.querySelectorAll('[data-delete-media-todo]').forEach(el=>el.onclick=()=>{state.todos[type]=state.todos[type].filter(x=>x.id!==el.dataset.deleteMediaTodo);saveState();render();});
 }
 function renderCopywriting(){
@@ -425,10 +621,11 @@ function renderScheduleListView(){
   if(currentSub==='year'){
     const year=now.getFullYear();
     const startMonth=now.getMonth();
+    const todayKey=formatDate(now);
     const yearEvents=state.schedule
       .filter(x=>{
         const d=new Date(x.date+'T00:00:00');
-        return d.getFullYear()===year && d.getMonth()>=startMonth;
+        return d.getFullYear()===year && x.date>=todayKey;
       })
       .sort(sortSchedule);
 
@@ -452,7 +649,7 @@ function renderScheduleListView(){
     appContent.innerHTML=`
       <div class="year-schedule-header">
         <strong>${year} 年日程</strong>
-        <span>仅显示本月及之后的月份</span>
+        <span>仅显示今天及之后的日程</span>
       </div>
       <div class="year-schedule-list">${sections.join('')}</div>
     `;
@@ -670,6 +867,23 @@ function renderPeriodCalendar(){
     const duration=daysBetweenInclusive(x.start,x.end);
     return `<div class="period-record-card"><div><strong>${formatShortDate(x.start)} — ${formatShortDate(x.end)}</strong><span>${duration} 天</span></div><button class="icon-btn danger" data-delete-period="${x.id}" aria-label="删除经期记录">×</button></div>`;
   }).join(''):'<p class="soft-empty period-empty">本月还没有经期记录。</p>';
+
+  const statsByMonth={};
+  records.forEach(x=>{
+    const key=x.start.slice(0,7);
+    if(!statsByMonth[key])statsByMonth[key]=[];
+    statsByMonth[key].push(x);
+  });
+  const periodStats=Object.entries(statsByMonth)
+    .sort((a,b)=>b[0].localeCompare(a[0]))
+    .map(([key,items])=>{
+      const [yy,mm]=key.split('-');
+      const totalDays=items.reduce((sum,item)=>sum+daysBetweenInclusive(item.start,item.end),0);
+      return `<div class="period-stat-month">
+        <div class="period-stat-heading"><strong>${yy} 年 ${Number(mm)} 月</strong><span>共 ${totalDays} 天</span></div>
+        <div class="period-stat-items">${items.map(item=>`<div class="period-stat-item"><span>${formatShortDate(item.start)} — ${formatShortDate(item.end)}</span><b>${daysBetweenInclusive(item.start,item.end)} 天</b></div>`).join('')}</div>
+      </div>`;
+    }).join('');
   appContent.innerHTML=`
     <div class="period-shell" id="periodSwipeArea">
       <div class="calendar-toolbar period-toolbar"><button class="calendar-arrow" id="prevPeriodMonth">‹</button><h2>${y} 年 ${m+1} 月</h2><button class="calendar-arrow" id="nextPeriodMonth">›</button></div>
@@ -684,6 +898,8 @@ function renderPeriodCalendar(){
       </div>
       <div class="section-title period-list-title"><h2>本月经期</h2><span>${monthRecords.length} 次</span></div>
       <div class="period-record-list">${list}</div>
+      <div class="section-title period-stats-title"><h2>经期统计</h2><span>${records.length} 次记录</span></div>
+      <div class="period-stats-list">${periodStats||'<p class="soft-empty period-empty">还没有可以统计的经期记录。</p>'}</div>
     </div>`;
   $('prevPeriodMonth').onclick=()=>changePeriodMonth(-1);
   $('nextPeriodMonth').onclick=()=>changePeriodMonth(1);
@@ -731,13 +947,25 @@ function renderReading(){
 }
 
 function handleQuickAdd(){
+  if(followerCenterOpen)return;
   if(currentMain==='media'&&['shoot','edit','food'].includes(currentSub))return openTodoModal(currentSub);
   if(currentMain==='media'&&currentSub==='copy')return currentFolderId?createAndOpenNote(currentFolderId):openFolderModal();
   if(currentMain==='schedule')return ['month','week'].includes(currentSub)?openScheduleChoiceModal():openScheduleModal();
   if(currentMain==='health'&&currentSub==='exerciseLog')return openExerciseModal();
   if(currentMain==='reading'&&currentSub==='booklist')return openBookModal();
 }
-function openTodoModal(type){openModal('新建事项',`<form id="todoForm"><div class="form-group"><label>事项名称</label><input class="input" name="title" required placeholder="例如：拍摄夏日穿搭视频"></div><div class="form-group"><label>备注（可选）</label><textarea class="textarea" name="note"></textarea></div><button class="primary-btn">保存</button></form>`);$('todoForm').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);state.todos[type].push({id:uid(),title:f.get('title').trim(),note:f.get('note').trim(),done:false});saveState();closeModal();render();};}
+function openTodoModal(type,id=null){
+  const item=id?(state.todos[type]||[]).find(x=>x.id===id):null;
+  openModal(item?'编辑事项':'新建事项',`<form id="todoForm"><div class="form-group"><label>事项名称</label><input class="input" name="title" required value="${item?escapeAttr(item.title):''}" placeholder="例如：拍摄夏日穿搭视频"></div><div class="form-group"><label>备注（可选）</label><textarea class="textarea" name="note">${item?escapeHtml(item.note||''):''}</textarea></div><button class="primary-btn">${item?'保存修改':'保存'}</button></form>`);
+  $('todoForm').onsubmit=e=>{
+    e.preventDefault();
+    const f=new FormData(e.target);
+    const data={title:f.get('title').trim(),note:f.get('note').trim()};
+    if(item)Object.assign(item,data);
+    else state.todos[type].push({id:uid(),...data,done:false});
+    saveState();closeModal();render();
+  };
+}
 function openFolderModal(){openModal('新建文件夹',`<form id="folderForm"><div class="form-group"><label>文件夹名称</label><input class="input" name="name" required placeholder="例如：小红书文案"></div><button class="primary-btn">创建文件夹</button></form>`);$('folderForm').onsubmit=e=>{e.preventDefault();state.folders.push({id:uid(),name:new FormData(e.target).get('name').trim(),notes:[]});saveState();closeModal();render();};}
 function openNoteEditor(folderId,noteId=null){
   currentFolderId=folderId;
